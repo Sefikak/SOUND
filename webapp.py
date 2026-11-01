@@ -231,13 +231,11 @@ class Backend:
         for handle in old:
             user32.DestroyIcon(handle)
         command = f'wscript.exe "{os.path.join(BASE_DIR, "run.vbs")}"'
+        # Görev çubuğu ikonu kimliğe (AppUserModelID) göre önbelleğe alınır ve aynı kimlik için bir daha okunmaz;
+        # bu yüzden her renk kendi kimliğini kullanır (varsayılan morda asıl kimlik)
+        app_id = APP_ID if path == ICON else f"{APP_ID}.{os.path.splitext(os.path.basename(path))[0]}"
         try:
-            if getattr(self, "_icon_path", None) not in (None, path):
-                # görev çubuğu düğmesinin ikonu önbellekte kalır: kimliği kısa süre değiştirip geri alınca
-                # Windows düğmeyi yeniden kurar ve yeni ikonu okur (önizleme düğmeleri kendiliğinden geri eklenir)
-                wintaskbar.set_window_identity(self.hwnd, APP_ID + ".refresh", path, "SOUND", command)
-                time.sleep(0.15)
-            wintaskbar.set_window_identity(self.hwnd, APP_ID, path, "SOUND", command)
+            wintaskbar.set_window_identity(self.hwnd, app_id, path, "SOUND", command)
             self._icon_path = path
         except OSError:
             pass

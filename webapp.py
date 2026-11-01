@@ -32,7 +32,7 @@ import wintaskbar
 from library import DATA_DIR, Library
 import importer
 from recommender import build_home, mix_for
-from searcher import (artist_page, artist_radio, find_artist, playlist_tracks, remove_duplicates, search_albums,
+from searcher import (artist_page, artist_radio, clean_channel, find_artist, playlist_tracks, remove_duplicates, search_albums,
                       search_artists, search_playlists, search_songs, search_tracks)
 
 APP_ID = "SOUND.MusicPlayer"
@@ -512,7 +512,7 @@ class Backend:
                 "year": info.get("release_year") or (info.get("upload_date") or "")[:4] or None,
                 "views": info.get("view_count"),
                 "followers": info.get("channel_follower_count"),
-                "channel": info.get("channel") or info.get("uploader"),
+                "channel": clean_channel(info.get("channel") or info.get("uploader")) or None,
                 "channel_url": info.get("channel_url") or info.get("uploader_url"),
                 "description": shorten(description, 320) if description else "",
             }

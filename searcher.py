@@ -10,10 +10,28 @@ def thumbnail_url(video_id):
     return f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg"
 
 
+JUNK_NAMES = {"null", "none", "undefined", "nan", "n/a", "-", "unknown", "?"}
+
+
 def clean_channel(name):
-    """"Tarkan - Topic", "TarkanVEVO" gibi kanal adlarını sanatçı adına çevir."""
-    name = re.sub(r"\s*-\s*Topic$", "", name or "")
+    """"Tarkan - Topic", "TarkanVEVO" gibi kanal adlarını sanatçı adına çevir.
+    "null" gibi anlamsız kanal adları (gerçekten böyle adlı kanallar var) boş döner."""
+    name = re.sub(r"\s*-\s*Topic$", "", (name or "").strip())
+    if name.casefold() in JUNK_NAMES:
+        return ""
     return re.sub(r"(?<=[a-zçğıöşü0-9])\s*VEVO$", "", name, flags=re.I) if name.upper() != "VEVO" else name
+
+
+def artist_from_title(title):
+    """"Zeki Müren - Bulamazsın" → "Zeki Müren". Ayraç yoksa boş döner."""
+    parts = re.split(r"\s+[-–—|]\s+|\s{2,}", (title or "").strip(), maxsplit=1)
+    if len(parts) == 2 and 1 < len(parts[0]) <= 40:
+        return parts[0].strip()
+    return ""
+
+
+def guess_artist(channel, title):
+    return clean_channel(channel) or artist_from_title(title) or "Bilinmeyen sanatçı"
 
 
 def track_from_entry(entry):
@@ -21,7 +39,7 @@ def track_from_entry(entry):
     return {
         "id": video_id,
         "title": entry.get("title") or "Adsız parça",
-        "artist": clean_channel(entry.get("channel") or entry.get("uploader")) or "Bilinmeyen sanatçı",
+        "artist": guess_artist(entry.get("channel") or entry.get("uploader"), entry.get("title")),
         "duration": int(entry.get("duration") or 0),
         "thumbnail": thumbnail_url(video_id),
         "url": f"https://www.youtube.com/watch?v={video_id}",

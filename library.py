@@ -122,7 +122,11 @@ class Library:
         for key, value in db.execute("SELECT key, value FROM kv"):
             data[key] = json.loads(value)
         data["settings"] = {**DEFAULT_SETTINGS, **(data.get("settings") or {})}
+        from searcher import JUNK_NAMES, guess_artist
         for track in data["tracks"].values():
+            if not track.get("artist") or track["artist"].strip().casefold() in JUNK_NAMES:
+                track["artist"] = guess_artist(None, track.get("title"))
+                db.execute("UPDATE tracks SET artist=? WHERE id=?", (track["artist"], track["id"]))
             if track.get("file") and not os.path.exists(os.path.join(MUSIC_DIR, track["file"])):
                 track["file"] = None
             if track.get("video_file") and not os.path.exists(os.path.join(VIDEO_DIR, track["video_file"])):

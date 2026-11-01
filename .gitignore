@@ -1,0 +1,5 @@
+# kullanıcı verisi: kitaplık, çerezler (YouTube oturumu!), müzikler, önbellek, tarayıcı verisi
+data/
+# Python ara dosyaları
+__pycache__/
+*.pyc

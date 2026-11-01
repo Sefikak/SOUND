@@ -1,0 +1,15 @@
+yt-dlp
+pygame
+Pillow
+imageio-ffmpeg
+mutagen
+deno
+yt-dlp-ejs
+winrt-runtime
+winrt-Windows.Media
+winrt-Windows.Media.Playback
+winrt-Windows.Foundation
+winrt-Windows.Storage.Streams
+winrt-Windows.Storage
+pywebview
+ytmusicapi

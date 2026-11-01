@@ -3,3 +3,4 @@ data/
 # Python ara dosyaları
 __pycache__/
 *.pyc
+.venv/

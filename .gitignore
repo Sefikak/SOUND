@@ -4,3 +4,6 @@ data/
 __pycache__/
 *.pyc
 .venv/
+# kurulum sihirbazının kaldırıcısı (SOUNDsetup.exe kurar)
+unins*.exe
+unins*.dat

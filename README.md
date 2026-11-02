@@ -17,9 +17,9 @@ Kaldırmak için: **Ayarlar → Uygulamalar → SOUND → Kaldır** (kitaplığ�
 
 ## Mobil sürüm (Android)
 
-### [⬇ SOUND-android-0.1.1.apk'yı indir](https://github.com/Sefikak/SOUND/raw/android-0.1.1/SOUND-android-0.1.1.apk)
+### [⬇ SOUND-android-0.1.2.apk'yı indir](https://github.com/Sefikak/SOUND/raw/android-0.1.2/SOUND-android-0.1.2.apk)
 
-**Erken deneme sürümü:** Şimdiye kadar yalnızca emülatörde denendi, telefonda sorun çıkabilir. 32 ve 64 bit telefonlarda kurulabilir.
+**Erken deneme sürümü:** Sorun çıkabilir. 32 ve 64 bit telefonlarda kurulabilir.
 
 1. APK'yı telefona indirip aç. Telefon sorarsa bilinmeyen kaynaktan kurma iznini ver.
 2. Android 8.0 veya üstü gerekir.

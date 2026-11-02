@@ -255,6 +255,8 @@ async function openSettings() {
     const draw = () => {
       const s = st.settings;
       $("#setBody", box).innerHTML = `
+        <div class="set-sec">Dinleme</div>
+        <div class="set-row"><div><b>İstatistikler</b><p>Dinleme süren, en çok dinlediğin şarkılar ve sanatçılar.</p></div><button class="pill" data-x="stats">Aç</button></div>
         <div class="set-sec">Kişiselleştir</div>
         <div class="set-row"><div><b>Görünüm ve yerleşim</b><p>Renkler, alev, boyut, kenar çubuğunun ve düğmelerin yeri.</p></div><button class="pill" data-x="customize">Kişiselleştir</button></div>
         <div class="set-sec">Çalma</div>
@@ -270,7 +272,8 @@ async function openSettings() {
         <div class="set-row"><div></div><button class="textbtn" data-x="clearCache">Önbelleği temizle</button></div>
         <div class="set-sec">İçe aktar</div>
         <div class="set-row"><div><b>YouTube Music</b><p>Hesabına giriş yap; kayıtlı listelerin albüm, beğendiğin şarkılar favori olarak eklenir. Zaten olanlar atlanır.</p></div><button class="pill" data-x="loginYtm">Giriş yap ve aktar</button></div>
-        <div class="set-row"><div><b>Spotify</b><p>Hesap verisi dosyan ya da liste bağlantılarınla; beğenilenler ve listelerin YouTube Music'te bulunup eklenir.</p></div><button class="pill" data-x="importSpotify">Aktar</button></div>
+        <div class="set-row"><div><b>Spotify hesabı (Premium)</b><p>Hesabına giriş yap; beğendiğin şarkılar ve listelerin doğrudan aktarılır. İlk seferde bir kerelik kurulum ister.</p></div><button class="pill" data-x="loginSpotify">Giriş yap ve aktar</button></div>
+        <div class="set-row"><div><b>Spotify bağlantı ya da dosya</b><p>Premium gerekmez: liste bağlantıları ya da hesap verisi dosyanla aktarılır.</p></div><button class="pill" data-x="importSpotify">Aktar</button></div>
         <div class="set-sec">Güncelleme</div>
         <div class="set-row"><div><b>Otomatik güncelle</b><p>${ver.git ? "GitHub'da yeni sürüm çıkınca SOUND kendini arka planda günceller; yeniden başlatınca etkin olur." : "Uygulama klasörü henüz bir GitHub deposuna bağlı değil."}</p></div>${toggleHTML("auto_update", s.auto_update !== false)}</div>
         <div class="set-row"><div><b>Sürüm</b><p>${esc(ver.version || "bilinmiyor")}${ver.pending ? " · yeni sürüm indirildi" : ""}</p></div>${ver.pending
@@ -292,6 +295,7 @@ async function openSettings() {
       else if (x === "account") { done(null); openAccount(); }
       else if (x === "customize") { done(null); openCustomize(); }
       else if (x === "audioFx") { done(null); openAudioFx(); }
+      else if (x === "stats") { done(null); openPage("stats"); }
       else if (x === "restart") api.restart_app();
       else if (x === "checkUpdate") {
         const b = e.target.closest("[data-x]");
@@ -304,6 +308,7 @@ async function openSettings() {
       }
       else if (x === "loginYtm") { done(null); loginImport("ytmusic"); }
       else if (x === "importSpotify") { done(null); openSpotifyImport(); }
+      else if (x === "loginSpotify") { done(null); loginImport("spotify"); }
     });
     box.addEventListener("input", e => {
       const r = e.target.closest("[data-range]");
@@ -1607,9 +1612,10 @@ function applyFx() {
 
 /* ---------- ses dengeleme ----------
    Her şarkının yüksekliği çalarken ölçülür (BS.1770'e yakın: K ağırlığı + 400 ms'lik bloklar + geçitleme) ve hedefe göre
-   kazanç hesaplanır. Sonuç saklanır: bir kez dinlenen şarkı sonraki sefer baştan doğru sesle başlar. İlk dinleyişte tipik
-   bir değerle başlar, ölçüm oturdukça yavaşça ayarlanır. */
-const LOUD_TYPICAL = -11, LOUD_SURE = 30;  // henüz ölçülmemiş şarkı için varsayım; ölçümün kesinleştiği süre (sn)
+   kazanç hesaplanır. Sonuç saklanır: bir kez dinlenen şarkı sonraki sefer baştan doğru sesle başlar. Şarkı çalarken seviye
+   hiç değişmez: ilk dinleyişte tipik bir değerle çalar, ölçüm yalnızca sonraki dinleyiş için kullanılır (çalarken ayarlamak
+   şarkının kendi kendine yükselmesi olarak duyuluyor, sessiz girişte ölçüm de yanıltıyor). */
+const LOUD_TYPICAL = -11, LOUD_MIN_SECONDS = 60, LOUD_MAX_BOOST = 3;  // ölçülmemiş şarkı için varsayım; güvenilir ölçümün en kısa süresi; en fazla yükseltme (dB)
 const LN = new Map(AUDIO.map(el => [el, { id: null, stored: null, blocks: [], node: null, meter: null, buf: null, saved: 0, lufs: null }]));
 function hookLoudness(el, source) {
   const st = LN.get(el);
@@ -1643,20 +1649,20 @@ const measuredSeconds = st => st.blocks.length * 0.34;
 function loudnessGain(st) {
   if (S.settings.normalize === false) return 0;
   const target = +S.settings.norm_target || -14;
-  if (st.stored != null) return Math.max(-15, Math.min(6, target - st.stored));
-  const seen = st.lufs != null && measuredSeconds(st) >= 8 ? st.lufs : LOUD_TYPICAL;
-  return Math.max(-15, Math.min(3, target - seen));  // kesinleşmeden fazla yükseltme: sessiz girişten sonra nakarat patlamasın
+  return Math.max(-15, Math.min(LOUD_MAX_BOOST, target - (st.stored ?? LOUD_TYPICAL)));
 }
 function applyLoudness(el, instant = false) {
   const st = LN.get(el);
   if (!st.node) return;
   const g = Math.pow(10, loudnessGain(st) / 20);
   if (instant === true) { st.node.gain.cancelScheduledValues(0); st.node.gain.value = g; }
-  else st.node.gain.setTargetAtTime(g, actx.currentTime, st.stored != null ? 0.05 : 4);
+  else st.node.gain.setTargetAtTime(g, actx.currentTime, 0.05);
 }
 function saveLoudness(st) {
   const secs = measuredSeconds(st);
-  if (!st.id || st.lufs == null || secs < LOUD_SURE || secs - st.saved < 15) return;
+  // şarkının çoğu duyulmadan saklanmaz: yalnızca sessiz girişi dinlenmiş şarkı yanlış yükseltilirdi
+  const enough = Math.max(LOUD_MIN_SECONDS, Math.min(120, (st.dur || 0) * 0.6));
+  if (!st.id || st.lufs == null || secs < enough || secs - st.saved < 15) return;
   st.saved = secs;
   api.set_loudness(st.id, st.lufs, secs);
 }
@@ -1664,12 +1670,13 @@ function loudnessFor(el, id) {
   const st = LN.get(el);
   if (st.id === id) return;
   saveLoudness(st);
-  Object.assign(st, { id, stored: null, blocks: [], saved: 0, lufs: null });
+  Object.assign(st, { id, stored: null, blocks: [], saved: 0, lufs: null, dur: 0 });
   applyLoudness(el, true);
   if (id) api.loudness(id).then(r => {
     if (st.id !== id || !r) return;
-    st.stored = r.lufs;
     st.saved = r.seconds;
+    if (r.seconds < LOUD_MIN_SECONDS) return;  // eski, kısa ölçüm: güvenilmez, yenisi birikince değişir
+    st.stored = r.lufs;
     applyLoudness(el, true);
   });
 }
@@ -1685,9 +1692,9 @@ setInterval(() => {
     const power = sum / st.buf.length / (el.volume * el.volume);  // oynatıcının ses düzeyi ölçüme karışmasın
     if (power < 1e-7) continue;  // -70 LUFS altı: mutlak geçit
     st.blocks.push(power);
+    if (isFinite(el.duration)) st.dur = el.duration;
     if (st.blocks.length % 6 === 0) {
       st.lufs = loudnessOf(st);
-      if (st.stored == null) applyLoudness(el);
       saveLoudness(st);
     }
   }
@@ -1715,7 +1722,8 @@ async function openAudioFx() {
       if (S.settings.normalize === false) return "Şarkılar özgün seviyesinde çalıyor.";
       if (!P.current || lufs == null) return "Bir şarkı çalınca yüksekliği ölçülür ve sonraki dinleyişler için saklanır.";
       const fmt = v => (v > 0 ? "+" : "") + v.toFixed(1).replace(".", ",").replace("-", "−");
-      return `Bu şarkı: ${fmt(lufs)} LUFS · uygulanan ${fmt(loudnessGain(st))} dB${st.stored == null ? " (ölçülüyor)" : ""}`;
+      return st.stored != null ? `Bu şarkı: ${fmt(lufs)} LUFS · uygulanan ${fmt(loudnessGain(st))} dB`
+        : `Bu şarkı ölçülüyor; sonraki dinleyişte dengelenecek (şimdilik ${fmt(loudnessGain(st))} dB)`;
     };
     const draw = () => {
       const eq = eqOpts(), norm = S.settings.normalize !== false, target = +S.settings.norm_target || -14;

@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import urllib.request
 
 REMOTE = "https://github.com/Sefikak/SOUND.git"
 OUTPUT = os.path.join(os.environ["LOCALAPPDATA"], "SOUNDbuild", "app", "outputs", "apk", "release")
@@ -33,18 +34,22 @@ def main(notes):
 
     tag, filename = f"android-{name}", f"SOUND-android-{name}.apk"
     with tempfile.TemporaryDirectory() as bare:  # büyük dosya kalıcı depolara (OneDrive) girmesin
-        def git(*args, **kwargs):
-            return subprocess.run(["git", "-C", bare, *args], check=True, capture_output=True, text=True, **kwargs).stdout.strip()
+        def git(*args, stdin=None):
+            # bayt olarak: metin kipinde Windows satır sonu dosya adının sonuna \r ekler, adres 404 verir
+            return subprocess.run(["git", "-C", bare, *args], check=True, capture_output=True, input=stdin).stdout.decode().strip()
         subprocess.run(["git", "init", "-q", "--bare", bare], check=True)
         blob = git("hash-object", "-w", apk)
-        tree = git("mktree", input=f"100644 blob {blob}\t{filename}\n")
+        tree = git("mktree", stdin=f"100644 blob {blob}\t{filename}\n".encode())
         commit = git("-c", "user.name=Sefikak", "-c", "user.email=aksefik55@gmail.com", "commit-tree", tree, "-m", f"SOUND Android {name}")
         git("tag", tag, commit)
         git("push", "-q", REMOTE, f"refs/tags/{tag}")
 
+    url = f"https://github.com/Sefikak/SOUND/raw/{tag}/{filename}"
+    with urllib.request.urlopen(urllib.request.Request(url, method="HEAD"), timeout=60) as response:
+        if int(response.headers["Content-Length"]) != os.path.getsize(apk):
+            sys.exit(f"{url} APK ile aynı boyutta değil")
     with open(MANIFEST, "w", encoding="utf-8", newline="\n") as file:
-        json.dump({"versionCode": code, "versionName": name, "sha256": sha,
-                   "url": f"https://github.com/Sefikak/SOUND/raw/{tag}/{filename}", "notes": notes},
+        json.dump({"versionCode": code, "versionName": name, "sha256": sha, "url": url, "notes": notes},
                   file, ensure_ascii=False, indent=2)
         file.write("\n")
     print(f"{tag} yayında. Telefonlara açmak için update/android.json dosyasını commit edip mobile dalına gönder.")

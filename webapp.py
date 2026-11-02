@@ -1064,6 +1064,18 @@ class Api:
     def played(self, track):
         self._b.played(track)
 
+    def listen(self, session, track, seconds):
+        self._b.lib.log_listen(session, plain_track(track), seconds)
+
+    def stats(self, period="30"):
+        return self._b.lib.stats(period)
+
+    def loudness(self, track_id):
+        return self._b.lib.loudness(track_id)
+
+    def set_loudness(self, track_id, lufs, seconds):
+        self._b.lib.set_loudness(track_id, lufs, seconds)
+
     def track_info(self, track):
         return self._b.fetch_track_info(track)
 

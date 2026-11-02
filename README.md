@@ -26,6 +26,8 @@ Kaldırmak için: **Ayarlar → Uygulamalar → SOUND → Kaldır** (kitaplığ�
 - Video modu, şarkı sözleri (LRCLIB), boşluksuz geçiş ve crossfade
 - YouTube Music ve Spotify'dan içe aktarma
 - Medya tuşları / Bluetooth kulaklık desteği, görev çubuğu düğmeleri
+- 10 bantlı ekolayzır ve ses dengeleme (şarkılar arası ses farkını giderir)
+- Dinleme istatistikleri: süre, en çok dinlenen şarkı ve sanatçılar, günlere ve saatlere göre dağılım
 - Kişiselleştirme: vurgu rengi, tema, yerleşim, arayüz boyutu
 
 ## Geliştirme

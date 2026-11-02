@@ -7,6 +7,7 @@ import sqlite3
 import threading
 import time
 import uuid
+from datetime import datetime, timedelta
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -31,8 +32,13 @@ CREATE TABLE IF NOT EXISTS folders (id TEXT PRIMARY KEY, name TEXT, created REAL
 CREATE TABLE IF NOT EXISTS history (pos INTEGER, track_id TEXT PRIMARY KEY, at REAL, plays INTEGER);
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS lyrics (track_id TEXT PRIMARY KEY, data TEXT, fetched REAL);
+CREATE TABLE IF NOT EXISTS listens (session TEXT PRIMARY KEY, track_id TEXT, title TEXT, artist TEXT, thumbnail TEXT, url TEXT,
+    duration INTEGER, at REAL, seconds REAL, plays INTEGER DEFAULT 1, seeded INTEGER DEFAULT 0);
+CREATE INDEX IF NOT EXISTS listens_at ON listens (at);
+CREATE TABLE IF NOT EXISTS loudness (track_id TEXT PRIMARY KEY, lufs REAL, seconds REAL);
 """
-DEFAULT_SETTINGS = {"crossfade": False, "crossfade_seconds": 6, "gapless": True, "cache_mb": 1500, "autoplay": True}
+DEFAULT_SETTINGS = {"crossfade": False, "crossfade_seconds": 6, "gapless": True, "cache_mb": 1500, "autoplay": True,
+                    "normalize": True, "norm_target": -14}
 
 
 class Library:
@@ -64,6 +70,7 @@ class Library:
         if fresh:
             self._import_json()
         self._load()
+        self._seed_listens()
 
     # ---------- kayıt ----------
 
@@ -647,6 +654,113 @@ class Library:
 
     def set_home_cache(self, sections, cold):
         self._set("home_cache", {"at": time.time(), "cold": cold, "sections": sections})
+
+    # ---------- dinleme istatistikleri ----------
+
+    def _seed_listens(self):
+        """Eski geçmişteki dinleme sayıları bir kez aktarılır. Tarihleri bilinmediği için (seeded=1) yalnızca
+        "Tüm zamanlar" toplamlarında sayılır, dönemlere ve grafiklere girmez."""
+        if self.db.execute("SELECT 1 FROM kv WHERE key='listens_seeded'").fetchone():
+            return
+        tracks = self.data["tracks"]
+        with self._tx():
+            for entry in self.data["history"]:
+                track = tracks.get(entry["id"])
+                if not track:
+                    continue
+                plays = entry.get("plays", 1)
+                self.db.execute("INSERT OR IGNORE INTO listens VALUES (?,?,?,?,?,?,?,?,?,?,1)",
+                                ("seed:" + track["id"], track["id"], track.get("title"), track.get("artist"), track.get("thumbnail"),
+                                 track.get("url"), track.get("duration") or 0, entry.get("at", 0),
+                                 plays * (track.get("duration") or 0), plays))
+            self._write_kv("listens_seeded", True)
+
+    def log_listen(self, session, track, seconds):
+        """Bir dinleme oturumunu kaydeder; aynı oturum tekrar gelirse yalnızca süresi güncellenir."""
+        with self._lock:
+            self.db.execute("""INSERT INTO listens VALUES (?,?,?,?,?,?,?,?,?,1,0)
+                               ON CONFLICT(session) DO UPDATE SET seconds=MAX(seconds, excluded.seconds)""",
+                            (session, track["id"], track.get("title"), track.get("artist"), track.get("thumbnail"),
+                             track.get("url"), track.get("duration") or 0, time.time(), seconds))
+
+    def stats(self, period="30"):
+        """period: "7", "30" (gün), "year" (bu yıl), "all" (tüm zamanlar)."""
+        now = datetime.now()
+        today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        if period == "year":
+            start = today.replace(month=1, day=1)
+        elif period == "all":
+            start = None
+        else:
+            start = today - timedelta(days=int(period) - 1)
+        since = start.timestamp() if start else 0
+        where = "WHERE at >= ? AND seeded = 0" if start else "WHERE at >= ?"
+        # Spotify'daki gibi: en az 30 sn ya da şarkının yarısı dinlendiyse "dinleme" sayılır; atlananlar yalnızca süreye girer.
+        counted = "CASE WHEN seconds >= 30 OR (duration > 0 AND seconds >= duration * 0.5) THEN plays ELSE 0 END"
+        unknown = "Bilinmeyen sanatçı"
+        with self._lock:
+            run = lambda sql, *args: self.db.execute(sql, args).fetchall()
+            total, plays, songs = run(f"""SELECT COALESCE(SUM(seconds), 0), COALESCE(SUM({counted}), 0),
+                                          COUNT(DISTINCT CASE WHEN {counted} > 0 THEN track_id END) FROM listens {where}""", since)[0]
+            artists = run(f"""SELECT COUNT(DISTINCT artist) FROM listens {where} AND {counted} > 0 AND artist != ?""", since, unknown)[0][0]
+            top_tracks = run(f"""SELECT track_id, MAX(title), MAX(artist), MAX(thumbnail), MAX(url), MAX(duration),
+                                 SUM({counted}) AS n, SUM(seconds) AS s FROM listens {where}
+                                 GROUP BY track_id HAVING n > 0 ORDER BY n DESC, s DESC LIMIT 15""", since)
+            top_artists = run(f"""SELECT artist, SUM({counted}) AS n, SUM(seconds) AS s, MAX(track_id), MAX(thumbnail) FROM listens {where} AND artist != ?
+                                  GROUP BY artist HAVING n > 0 ORDER BY s DESC LIMIT 12""", since, unknown)
+            dated = run("SELECT at, seconds FROM listens WHERE seeded = 0 AND at >= ? ORDER BY at", since)
+            all_days = {row[0] for row in run("SELECT DISTINCT date(at, 'unixepoch', 'localtime') FROM listens WHERE seeded = 0")}
+            has_seeded = bool(run("SELECT 1 FROM listens WHERE seeded = 1 LIMIT 1"))
+
+        hours = [0] * 24
+        by_bucket = {}
+        monthly = period in ("year", "all")
+        for at, seconds in dated:
+            moment = datetime.fromtimestamp(at)
+            hours[moment.hour] += seconds
+            key = moment.strftime("%Y-%m" if monthly else "%Y-%m-%d")
+            by_bucket[key] = by_bucket.get(key, 0) + seconds
+        buckets = []
+        if monthly:
+            first = start or (datetime.fromtimestamp(dated[0][0]) if dated else now)
+            year, month = first.year, first.month
+            while (year, month) <= (now.year, now.month):
+                key = f"{year}-{month:02d}"
+                buckets.append({"key": key, "seconds": by_bucket.get(key, 0)})
+                year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+        else:
+            for offset in range(int(period)):
+                key = (start + timedelta(days=offset)).strftime("%Y-%m-%d")
+                buckets.append({"key": key, "seconds": by_bucket.get(key, 0)})
+
+        streak = 0
+        day = today if today.strftime("%Y-%m-%d") in all_days else today - timedelta(days=1)  # bugün henüz dinlemediyse seri bozulmaz
+        while day.strftime("%Y-%m-%d") in all_days:
+            streak += 1
+            day -= timedelta(days=1)
+
+        known = self.data["tracks"]
+        return {
+            "period": period, "seconds": total, "plays": plays, "tracks": songs, "artists": artists, "streak": streak,
+            "buckets": buckets, "monthly": monthly, "hours": hours, "seeded": has_seeded and period == "all",
+            "top_tracks": [{"id": r[0], "title": r[1], "artist": r[2], "thumbnail": r[3], "duration": r[5],
+                            "url": r[4] or (known.get(r[0]) or {}).get("url") or f"https://www.youtube.com/watch?v={r[0]}",
+                            "plays": r[6], "seconds": r[7]} for r in top_tracks],
+            "top_artists": [{"name": r[0], "plays": r[1], "seconds": r[2], "id": r[3], "thumbnail": r[4]} for r in top_artists],
+        }
+
+    # ---------- ses dengeleme: şarkıların ölçülmüş yüksekliği ----------
+
+    def loudness(self, track_id):
+        with self._lock:
+            row = self.db.execute("SELECT lufs, seconds FROM loudness WHERE track_id=?", (track_id,)).fetchone()
+        return {"lufs": row[0], "seconds": row[1]} if row else None
+
+    def set_loudness(self, track_id, lufs, seconds):
+        with self._lock:
+            self.db.execute("""INSERT INTO loudness VALUES (?,?,?) ON CONFLICT(track_id) DO UPDATE
+                               SET lufs=excluded.lufs, seconds=excluded.seconds WHERE excluded.seconds >= loudness.seconds""",
+                            (track_id, lufs, seconds))
 
     # ---------- şarkı sözleri ----------
 

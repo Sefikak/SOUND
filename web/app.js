@@ -258,6 +258,7 @@ async function openSettings() {
         <div class="set-sec">Kişiselleştir</div>
         <div class="set-row"><div><b>Görünüm ve yerleşim</b><p>Renkler, alev, boyut, kenar çubuğunun ve düğmelerin yeri.</p></div><button class="pill" data-x="customize">Kişiselleştir</button></div>
         <div class="set-sec">Çalma</div>
+        <div class="set-row"><div><b>Ekolayzır ve ses dengeleme</b><p>Sesi kendine göre ayarla; şarkılar arasındaki ses farkını gider.</p></div><button class="pill" data-x="audioFx">Aç</button></div>
         <div class="set-row"><div><b>Boşluksuz geçiş</b><p>Sıradaki şarkı önceden yüklenir, şarkılar arasında sessizlik olmaz.</p></div>${toggleHTML("gapless", s.gapless)}</div>
         <div class="set-row"><div><b>Şarkılar arası geçiş (crossfade)</b><p>Şarkı biterken sıradaki yavaşça açılır.</p></div>${toggleHTML("crossfade", s.crossfade)}</div>
         <div class="set-row"><div><b>Otomatik devam</b><p>Liste bitince benzer şarkılar çalmaya devam eder.</p></div>${toggleHTML("autoplay", s.autoplay !== false)}</div>
@@ -290,6 +291,7 @@ async function openSettings() {
       else if (x === "clearCache") { st = await api.clear_cache(); draw(); toast("Önbellek temizlendi"); }
       else if (x === "account") { done(null); openAccount(); }
       else if (x === "customize") { done(null); openCustomize(); }
+      else if (x === "audioFx") { done(null); openAudioFx(); }
       else if (x === "restart") api.restart_app();
       else if (x === "checkUpdate") {
         const b = e.target.closest("[data-x]");
@@ -640,14 +642,14 @@ function itemTrack(el) {
   return list && list.tracks[+holder.dataset.i];
 }
 
-function rowHTML(key, i, t) {
+function rowHTML(key, i, t, right = null) {
   const inAlbum = S.lists[key]?.ctx?.kind === "album";
   return `<div class="row${inAlbum ? " has-rm" : ""}" data-list="${key}" data-i="${i}" data-tid="${esc(t.id)}">
     <div class="num"><span class="n">${i + 1}</span><span class="eq"><i></i><i></i><i></i></span><button class="rp" data-act="play">${I.play}</button></div>
     <img class="th" data-act="play" loading="lazy" src="${thumb(t)}">
     <div class="tt"><div class="t">${esc(t.title)}</div><div class="a">${esc(t.artist)}</div></div>
     <button class="rb heart" data-act="fav"></button><button class="rb dl" data-act="dl"></button>
-    <div class="dur">${t.duration ? clock(t.duration) : "–"}</div>
+    <div class="dur">${right != null ? esc(right) : t.duration ? clock(t.duration) : "–"}</div>
     ${inAlbum ? `<button class="rb rm" data-act="unalbum" title="Albümden çıkar">${I.minus}</button>` : ""}<button class="rb more" data-act="menu" title="Diğer">${I.more}</button></div>`;
 }
 function cardHTML(key, i, t) {
@@ -762,7 +764,7 @@ function renderPage(keep = false) {
   S.lists = {};
   S.plShown = {};
   const page = $("#page");
-  page.innerHTML = { home: pageHome, search: pageSearch, favorites: pageFavorites, downloads: pageDownloads, album: pageAlbum, playlist: pagePlaylist, artist: pageArtist }[kind](ref);
+  page.innerHTML = { home: pageHome, search: pageSearch, favorites: pageFavorites, downloads: pageDownloads, album: pageAlbum, playlist: pagePlaylist, artist: pageArtist, stats: pageStats }[kind](ref);
   S.signature = pageSignature();
   $$("#nav a").forEach(a => a.classList.toggle("on", a.dataset.page === kind));
   $("#backBtn").disabled = !S.back.length;
@@ -863,7 +865,7 @@ function pageSearch() {
     ${S.lib.recent_searches.length ? section("Son aramalar", null, `<div class="chips">${S.lib.recent_searches.map(q => `<span class="chip with-x" data-act="searchFor" data-q="${esc(q)}">${esc(q)}<span class="x" data-act="forget" data-q="${esc(q)}" title="Geçmişten sil">✕</span></span>`).join("")}</div>`,
       `<span class="link" data-act="forgetAll">Geçmişi temizle</span>`) : ""}</div>`;
 }
-const thead = () => `<div class="thead"><div style="text-align:center">#</div><div class="c2">Başlık</div><div class="c6">Süre</div></div>`;
+const thead = (right = "Süre") => `<div class="thead"><div style="text-align:center">#</div><div class="c2">Başlık</div><div class="c6">${right}</div></div>`;
 
 function pageFavorites() {
   return collection({
@@ -950,6 +952,72 @@ function pageArtist(ref) {
   if (a.related.length) html += section("Hayranları bunları da dinliyor", null, `<div class="cards">${a.related.map(artistCardHTML).join("")}</div>`);
   if (a.description) html += section("Hakkında", null, `<div class="about">${esc(a.description)}</div>`);
   return html + `</div>`;
+}
+
+/* ---------- dinleme istatistikleri ---------- */
+const STAT_PERIODS = [["7", "Son 7 gün"], ["30", "Son 30 gün"], ["year", "Bu yıl"], ["all", "Tüm zamanlar"]];
+const MONTHS = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
+const statNum = n => Math.round(n).toLocaleString("tr-TR");
+function listenTime(seconds) {
+  const m = Math.round(seconds / 60);
+  if (m < 1) return seconds > 0 ? "1 dk'dan az" : "0 dk";
+  const h = Math.floor(m / 60);
+  return h ? `${statNum(h)} sa${m % 60 ? ` ${m % 60} dk` : ""}` : `${m} dk`;
+}
+function statBars(items, labelEvery) {
+  /* tek seri, tek eksen: yükseklik dakika. Y ölçeği yuvarlak bir tepe değere oturur */
+  const peakMin = Math.max(...items.map(x => x.seconds)) / 60;
+  const step = [1, 2, 5, 10, 15, 30, 60, 120, 180, 300, 600, 1200, 3000, 6000].find(s => s * 3 >= peakMin) || Math.ceil(peakMin / 3);
+  const top = Math.max(step, Math.ceil(peakMin / step) * step);
+  let ticks = "";
+  for (let v = step; v <= top; v += step) ticks += `<i style="bottom:${v / top * 100}%"><span>${listenTime(v * 60)}</span></i>`;
+  return `<div class="st-chart"><div class="st-grid">${ticks}</div><div class="st-bars">${items.map((x, i) => {
+    const pct = x.seconds / 60 / top * 100;
+    return `<div class="st-col" data-tip="${esc(x.tip)}: ${esc(listenTime(x.seconds))}" aria-label="${esc(x.tip)}: ${esc(listenTime(x.seconds))}">
+      <b ${x.seconds ? `style="height:max(3px,${pct}%)"` : ""}></b><span>${i % labelEvery === 0 ? esc(x.label) : ""}</span></div>`;
+  }).join("")}</div></div>`;
+}
+function pageStats() {
+  S.statsData = S.statsData || {};
+  const period = S.statsPeriod || "30", d = S.statsData[period];
+  afterRender = () => {
+    setGlow(null);
+    if (S.statsFresh === period) { S.statsFresh = null; return; }  // veri geldiği için yeniden çizildi
+    api.stats(period).then(res => {
+      S.statsData[period] = res;
+      if (S.page.kind === "stats" && (S.statsPeriod || "30") === period) { S.statsFresh = period; renderPage(true); }
+    });
+  };
+  const head = `<div class="pad st-head"><h1>İstatistikler</h1><div class="seg">${STAT_PERIODS.map(([k, n]) =>
+    `<button data-act="statsPeriod" data-k="${k}" class="${k === period ? "on" : ""}">${n}</button>`).join("")}</div></div>`;
+  if (!d) return head + `<div class="pad">${skeletonCards(6)}</div>`;
+  if (!d.seconds) return head + `<div class="empty"><b>Bu dönemde dinleme yok</b><p>Şarkı dinledikçe süren, en sevdiğin şarkılar ve sanatçılar burada birikir.</p>
+    ${period !== "all" ? `<button class="pill" data-act="statsPeriod" data-k="all">Tüm zamanlara bak</button>` : ""}</div>`;
+  const stat = (value, label) => `<div class="st-tile"><b>${esc(String(value))}</b><span>${label}</span></div>`;
+  let html = head + `<div class="pad"><div class="st-tiles">
+    <div class="st-tile st-big"><b>${esc(listenTime(d.seconds))}</b><span>toplam dinleme</span></div>
+    ${stat(statNum(d.plays), "dinleme")}${stat(statNum(d.tracks), "farklı şarkı")}${stat(statNum(d.artists), "farklı sanatçı")}${stat(statNum(d.streak) + " gün", "üst üste dinleme")}</div>`;
+  const items = d.buckets.map(b => {
+    if (d.monthly) { const [y, m] = b.key.split("-"); return { seconds: b.seconds, label: MONTHS[+m - 1].slice(0, 3), tip: `${MONTHS[+m - 1]} ${y}` }; }
+    const [y, m, day] = b.key.split("-");
+    return { seconds: b.seconds, label: `${+day} ${MONTHS[+m - 1].slice(0, 3)}`, tip: `${+day} ${MONTHS[+m - 1]}` };
+  });
+  const hasDated = items.some(x => x.seconds);
+  if (hasDated) {
+    html += section(d.monthly ? "Aylara göre dinleme" : "Günlere göre dinleme", null, statBars(items, items.length > 12 ? 5 : 1));
+    const hours = d.hours.map((s, h) => ({ seconds: s, label: String(h).padStart(2, "0"), tip: `${String(h).padStart(2, "0")}:00–${String((h + 1) % 24).padStart(2, "0")}:00` }));
+    html += section("Günün saatlerine göre", null, statBars(hours, 3));
+  }
+  if (d.seeded) html += `<p class="st-note">Toplamlara eski dinleme geçmişin de dahil. Tarihi bilinmediği için grafiklerde yer almıyor.</p>`;
+  html += `</div>`;
+  if (d.top_tracks.length) {
+    const key = registerList("stats", d.top_tracks, { kind: "stats", key: `stats:${period}` });
+    html += `<div class="pad">${section("En çok dinlediğin şarkılar", null, "")}</div>` + thead("Dinleme") +
+      `<div class="list">${d.top_tracks.map((t, i) => rowHTML(key, i, t, statNum(t.plays) + " kez")).join("")}</div>`;
+  }
+  if (d.top_artists.length) html += `<div class="pad">` + section("En çok dinlediğin sanatçılar", null, `<div class="cards">${d.top_artists.map(a =>
+    `<div class="card circle" data-act="artist" data-artist="${esc(a.name)}"><div class="cover"><img loading="lazy" src="${thumb(a)}"></div><div class="ct">${esc(a.name)}</div><div class="cfoot"><span>${esc(listenTime(a.seconds))}</span></div></div>`).join("")}</div>`) + `</div>`;
+  return html;
 }
 
 function downloadSlot(tracks) {
@@ -1152,6 +1220,7 @@ const P = {
       this.prepared = null;
       this.local = ready.local;
       this.loading = false;
+      loudnessFor(A, track.id);
       old.pause();
       A.volume = masterVolume;
       A.currentTime = 0;
@@ -1188,6 +1257,7 @@ const P = {
     playerChanged(!sameTrack);
   },
   load(src, start) {
+    loudnessFor(A, this.current && this.current.id);
     A.volume = masterVolume;
     A.src = src;
     if (start > 1) {
@@ -1290,6 +1360,7 @@ const P = {
     if (this.nextTrack() !== t) return;
     const el = other();
     el.volume = 0;
+    loudnessFor(el, t.id);
     el.src = src;
     el.load();
     this.prepared = { id: t.id, el, local };
@@ -1319,7 +1390,7 @@ onAudio("playing", () => {
 });
 onAudio("pause", () => { playerChanged(); syncVideo(); });
 onAudio("seeked", syncVideo);
-onAudio("ended", () => P.next(true));
+onAudio("ended", () => { listenEnd(); P.next(true); });
 onAudio("waiting", () => { if (!A.paused) { $("#ppBtn").innerHTML = I.spinner; } });
 onAudio("error", () => {
   if (!P.current || !A.getAttribute("src")) return;
@@ -1456,12 +1527,275 @@ function hookAudio() {
       analyser.smoothingTimeConstant = 0.5;
       analyser.connect(actx.destination);
       freq = new Uint8Array(analyser.frequencyBinCount);
+      buildFx();
     }
-    for (const el of AUDIO) if (!hookedAudio.has(el)) { actx.createMediaElementSource(el).connect(analyser); hookedAudio.add(el); }
+    for (const el of AUDIO) if (!hookedAudio.has(el)) { hookLoudness(el, actx.createMediaElementSource(el)); hookedAudio.add(el); }
     if (actx.state === "suspended") actx.resume();
   } catch (e) { console.warn("ses çözümleyici", e); }
 }
 AUDIO.forEach(el => el.addEventListener("play", hookAudio));
+
+/* ---------- ekolayzır ----------
+   her oynatıcı → kendi dengeleme kazancı → fxIn → ön kazanç → 10 bant → sınırlayıcı → çözümleyici → hoparlör.
+   Sınırlayıcı, ekolayzır da dengeleme de kapalıyken zincirden çıkar; ses hiç işlenmeden geçer. */
+const EQ_FREQS = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+const EQ_LABELS = ["31", "62", "125", "250", "500", "1K", "2K", "4K", "8K", "16K"];
+const EQ_PRESETS = {
+  flat: ["Düz", [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
+  bass: ["Bas", [6, 5, 4, 2, 0, 0, 0, 0, 0, 0]],
+  treble: ["Tiz", [0, 0, 0, 0, 0, 0, 1, 3, 4, 5]],
+  vocal: ["Vokal", [-2, -2, -1, 0, 2, 3, 3, 2, 0, -1]],
+  pop: ["Pop", [-1, 0, 2, 3, 3, 1, 0, 0, 1, 1]],
+  rock: ["Rock", [4, 3, 2, 0, -1, -1, 0, 2, 3, 4]],
+  electronic: ["Elektronik", [5, 4, 1, 0, -2, 1, 0, 1, 4, 5]],
+  acoustic: ["Akustik", [3, 3, 2, 1, 1, 1, 2, 2, 2, 1]],
+  night: ["Gece", [3, 2, 1, 0, 0, 1, 1, 0, -1, -2]],
+};
+const eqOpts = () => {
+  const e = S.settings.eq || {};
+  return { on: !!e.on, preset: e.preset || "flat", gains: e.gains && e.gains.length === 10 ? e.gains : EQ_PRESETS.flat[1] };
+};
+let fxIn = null, fxPre = null, fxBands = [], fxLimiter = null, fxTail = null;
+function makeBands(ctx) {
+  return EQ_FREQS.map((f, i) => {
+    const b = ctx.createBiquadFilter();
+    b.type = i === 0 ? "lowshelf" : i === 9 ? "highshelf" : "peaking";
+    b.frequency.value = f;
+    b.Q.value = 1.41;  // bir oktav genişlik
+    return b;
+  });
+}
+/* eğri çizimi ve ön kazanç için, ses çalmıyorken de çalışan hesap düğümleri */
+const eqProbe = makeBands(new OfflineAudioContext(1, 128, 48000));
+const EQ_CURVE_HZ = Float32Array.from({ length: 160 }, (_, i) => 20 * Math.pow(1000, i / 159));
+function eqResponse(gains) {
+  const out = new Float32Array(EQ_CURVE_HZ.length), mag = new Float32Array(EQ_CURVE_HZ.length), phase = new Float32Array(EQ_CURVE_HZ.length);
+  eqProbe.forEach((b, i) => {
+    b.gain.value = gains[i];
+    b.getFrequencyResponse(EQ_CURVE_HZ, mag, phase);
+    for (let k = 0; k < out.length; k++) out[k] += 20 * Math.log10(mag[k]);
+  });
+  return out;
+}
+function buildFx() {
+  fxIn = actx.createGain();
+  fxPre = actx.createGain();
+  fxBands = makeBands(actx);
+  fxLimiter = actx.createDynamicsCompressor();
+  fxLimiter.threshold.value = -1; fxLimiter.knee.value = 0; fxLimiter.ratio.value = 20;
+  fxLimiter.attack.value = 0.003; fxLimiter.release.value = 0.15;
+  fxIn.connect(fxPre);
+  fxTail = fxBands.reduce((prev, band) => { prev.connect(band); return band; }, fxPre);
+  fxLimiter.connect(analyser);
+  applyFx();
+}
+function applyFx() {
+  if (!actx || !fxIn) return;
+  const eq = eqOpts(), gains = eq.on ? eq.gains : EQ_PRESETS.flat[1], t = actx.currentTime;
+  fxBands.forEach((b, i) => b.gain.setTargetAtTime(gains[i], t, 0.03));
+  // yükseltilen bantlar taşmasın: eğrinin en yüksek noktası kadar genel ses kısılır
+  const peak = Math.max(0, ...eqResponse(gains));
+  fxPre.gain.setTargetAtTime(Math.pow(10, -peak / 20), t, 0.03);
+  const useLimiter = eq.on || S.settings.normalize !== false;
+  if (fxTail.limited !== useLimiter) {
+    try { fxTail.disconnect(); } catch (e) {}
+    fxTail.connect(useLimiter ? fxLimiter : analyser);
+    fxTail.limited = useLimiter;
+  }
+  AUDIO.forEach(applyLoudness);
+}
+
+/* ---------- ses dengeleme ----------
+   Her şarkının yüksekliği çalarken ölçülür (BS.1770'e yakın: K ağırlığı + 400 ms'lik bloklar + geçitleme) ve hedefe göre
+   kazanç hesaplanır. Sonuç saklanır: bir kez dinlenen şarkı sonraki sefer baştan doğru sesle başlar. İlk dinleyişte tipik
+   bir değerle başlar, ölçüm oturdukça yavaşça ayarlanır. */
+const LOUD_TYPICAL = -11, LOUD_SURE = 30;  // henüz ölçülmemiş şarkı için varsayım; ölçümün kesinleştiği süre (sn)
+const LN = new Map(AUDIO.map(el => [el, { id: null, stored: null, blocks: [], node: null, meter: null, buf: null, saved: 0, lufs: null }]));
+function hookLoudness(el, source) {
+  const st = LN.get(el);
+  st.node = actx.createGain();
+  source.connect(st.node);
+  st.node.connect(fxIn);
+  const hp = actx.createBiquadFilter(), shelf = actx.createBiquadFilter();
+  hp.type = "highpass"; hp.frequency.value = 38; hp.Q.value = -6.02;  // WebAudio'da Q dB cinsinden: 0,5
+  shelf.type = "highshelf"; shelf.frequency.value = 1681; shelf.gain.value = 4;
+  // sağ ve sol ayrı ölçülür: analyser tek başına sesi tek kanala indirir, stereo enerji yanlış çıkar
+  const split = actx.createChannelSplitter(2);
+  st.meter = [0, 1].map(ch => {
+    const m = actx.createAnalyser();
+    m.fftSize = 16384;  // ~340 ms; pencere arka plandayken zamanlayıcı yavaşlasa da yeterli örnek alınır
+    split.connect(m, ch);
+    return m;
+  });
+  st.buf = new Float32Array(16384);
+  source.connect(hp); hp.connect(shelf); shelf.connect(split);
+  applyLoudness(el, true);
+}
+function loudnessOf(st) {
+  const b = st.blocks;
+  if (!b.length) return null;
+  const mean = a => a.reduce((s, x) => s + x, 0) / a.length;
+  const gate = mean(b) * 0.1;  // göreli geçit: ortalamanın 10 LU altı (sessiz bölümler sayılmaz)
+  const kept = b.filter(x => x >= gate);
+  return -0.691 + 10 * Math.log10(mean(kept.length ? kept : b));
+}
+const measuredSeconds = st => st.blocks.length * 0.34;
+function loudnessGain(st) {
+  if (S.settings.normalize === false) return 0;
+  const target = +S.settings.norm_target || -14;
+  if (st.stored != null) return Math.max(-15, Math.min(6, target - st.stored));
+  const seen = st.lufs != null && measuredSeconds(st) >= 8 ? st.lufs : LOUD_TYPICAL;
+  return Math.max(-15, Math.min(3, target - seen));  // kesinleşmeden fazla yükseltme: sessiz girişten sonra nakarat patlamasın
+}
+function applyLoudness(el, instant = false) {
+  const st = LN.get(el);
+  if (!st.node) return;
+  const g = Math.pow(10, loudnessGain(st) / 20);
+  if (instant === true) { st.node.gain.cancelScheduledValues(0); st.node.gain.value = g; }
+  else st.node.gain.setTargetAtTime(g, actx.currentTime, st.stored != null ? 0.05 : 4);
+}
+function saveLoudness(st) {
+  const secs = measuredSeconds(st);
+  if (!st.id || st.lufs == null || secs < LOUD_SURE || secs - st.saved < 15) return;
+  st.saved = secs;
+  api.set_loudness(st.id, st.lufs, secs);
+}
+function loudnessFor(el, id) {
+  const st = LN.get(el);
+  if (st.id === id) return;
+  saveLoudness(st);
+  Object.assign(st, { id, stored: null, blocks: [], saved: 0, lufs: null });
+  applyLoudness(el, true);
+  if (id) api.loudness(id).then(r => {
+    if (st.id !== id || !r) return;
+    st.stored = r.lufs;
+    st.saved = r.seconds;
+    applyLoudness(el, true);
+  });
+}
+setInterval(() => {
+  if (!actx || actx.state !== "running") return;
+  for (const [el, st] of LN) {
+    if (!st.meter || !st.id || el.paused || el.seeking || el.volume < 0.003 || el.readyState < 3) continue;
+    let sum = 0;
+    for (const m of st.meter) {
+      m.getFloatTimeDomainData(st.buf);
+      for (let i = 0; i < st.buf.length; i++) sum += st.buf[i] * st.buf[i];
+    }
+    const power = sum / st.buf.length / (el.volume * el.volume);  // oynatıcının ses düzeyi ölçüme karışmasın
+    if (power < 1e-7) continue;  // -70 LUFS altı: mutlak geçit
+    st.blocks.push(power);
+    if (st.blocks.length % 6 === 0) {
+      st.lufs = loudnessOf(st);
+      if (st.stored == null) applyLoudness(el);
+      saveLoudness(st);
+    }
+  }
+}, 400);
+
+/* ---------- ekolayzır ve ses dengeleme penceresi ---------- */
+async function openAudioFx() {
+  const NORM = [[-19, "Sessiz"], [-14, "Normal"], [-11, "Yüksek"]];
+  let timer = null;
+  const save = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => api.update_settings({ eq: S.settings.eq, normalize: S.settings.normalize, norm_target: S.settings.norm_target }), 250);
+  };
+  const setEq = changes => { S.settings = { ...S.settings, eq: { ...eqOpts(), ...changes } }; applyFx(); save(); };
+  await modal(`<h3>Ekolayzır ve ses dengeleme</h3><p style="margin-bottom:0">Değişiklikler hemen duyulur ve kaydedilir.</p><div id="fxBody"></div>
+    <div class="row-btns" style="margin-top:18px"><button class="pill fill" data-x="close">Bitti</button></div>`, (box, done) => {
+    const curve = () => {
+      const eq = eqOpts(), r = eqResponse(eq.gains), W = 400, H = 90;
+      const pts = [...r].map((v, i) => `${(i / (r.length - 1) * W).toFixed(1)},${(H / 2 - Math.max(-15, Math.min(15, v)) / 15 * (H / 2 - 3)).toFixed(1)}`).join(" ");
+      return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><line x1="0" x2="${W}" y1="${H / 2}" y2="${H / 2}" class="fx-zero"/>
+        <polyline points="${pts}" vector-effect="non-scaling-stroke"/></svg>`;
+    };
+    const meter = () => {
+      const st = LN.get(A), lufs = st && (st.stored ?? st.lufs);
+      if (S.settings.normalize === false) return "Şarkılar özgün seviyesinde çalıyor.";
+      if (!P.current || lufs == null) return "Bir şarkı çalınca yüksekliği ölçülür ve sonraki dinleyişler için saklanır.";
+      const fmt = v => (v > 0 ? "+" : "") + v.toFixed(1).replace(".", ",").replace("-", "−");
+      return `Bu şarkı: ${fmt(lufs)} LUFS · uygulanan ${fmt(loudnessGain(st))} dB${st.stored == null ? " (ölçülüyor)" : ""}`;
+    };
+    const draw = () => {
+      const eq = eqOpts(), norm = S.settings.normalize !== false, target = +S.settings.norm_target || -14;
+      $("#fxBody", box).innerHTML = `
+        <div class="set-sec">Ekolayzır</div>
+        <div class="set-row"><div><b>Ekolayzır</b><p>Kapalıyken ayarların saklanır, ses olduğu gibi çalar.</p></div><button class="switch ${eq.on ? "on" : ""}" data-fx="eq"><i></i></button></div>
+        <div class="fx-eq ${eq.on ? "" : "dim"}">
+          <div class="fx-presets">${Object.entries(EQ_PRESETS).map(([k, [name]]) => `<button class="fx-chip ${eq.preset === k ? "on" : ""}" data-preset="${k}" ${eq.on ? "" : "disabled"}>${name}</button>`).join("")}
+            ${eq.preset === "custom" ? `<button class="fx-chip on" disabled>Özel</button>` : ""}</div>
+          <div class="fx-curve">${curve()}</div>
+          <div class="fx-bands">${eq.gains.map((g, i) => `<label title="${EQ_FREQS[i]} Hz"><span class="fx-db">${g > 0 ? "+" : ""}${g}</span>
+            <input type="range" min="-12" max="12" step="1" value="${g}" data-band="${i}" aria-label="${EQ_FREQS[i]} Hz" style="--v:${(g + 12) / 24 * 100}%" ${eq.on ? "" : "disabled"}><span>${EQ_LABELS[i]}</span></label>`).join("")}</div>
+        </div>
+        <div class="set-sec">Ses dengeleme</div>
+        <div class="set-row"><div><b>Ses seviyesini dengele</b><p>Şarkılar arasındaki ses farkını giderir.</p></div><button class="switch ${norm ? "on" : ""}" data-fx="norm"><i></i></button></div>
+        <div class="set-row ${norm ? "" : "dim"}"><div><b>Seviye</b><p id="fxMeter">${esc(meter())}</p></div>
+          <div class="seg">${NORM.map(([v, n]) => `<button data-target="${v}" class="${target === v ? "on" : ""}" ${norm ? "" : "disabled"}>${n}</button>`).join("")}</div></div>`;
+    };
+    box.addEventListener("click", e => {
+      const t = e.target.closest("button");
+      if (!t) return;
+      if (t.dataset.x === "close") return done(null);
+      if (t.dataset.fx === "eq") setEq({ on: !eqOpts().on });
+      else if (t.dataset.fx === "norm") { S.settings = { ...S.settings, normalize: S.settings.normalize === false }; applyFx(); save(); }
+      else if (t.dataset.preset) setEq({ preset: t.dataset.preset, gains: [...EQ_PRESETS[t.dataset.preset][1]] });
+      else if (t.dataset.target) { S.settings = { ...S.settings, norm_target: +t.dataset.target }; applyFx(); save(); }
+      else return;
+      draw();
+    });
+    box.addEventListener("input", e => {
+      const r = e.target.closest("[data-band]");
+      if (!r) return;
+      const gains = [...eqOpts().gains];
+      gains[+r.dataset.band] = +r.value;
+      const match = Object.keys(EQ_PRESETS).find(k => EQ_PRESETS[k][1].every((g, i) => g === gains[i]));
+      setEq({ gains, preset: match || "custom" });
+      r.style.setProperty("--v", (+r.value + 12) / 24 * 100 + "%");
+      r.previousElementSibling.textContent = (+r.value > 0 ? "+" : "") + r.value;
+      $(".fx-curve", box).innerHTML = curve();
+      $$(".fx-chip", box).forEach(c => c.classList.toggle("on", c.dataset.preset === (match || "custom")));
+    });
+    box.addEventListener("change", e => { if (e.target.closest("[data-band]")) draw(); });
+    box.addEventListener("dblclick", e => {  // çift tık: bandı sıfırla
+      const r = e.target.closest("[data-band]");
+      if (!r) return;
+      const gains = [...eqOpts().gains];
+      gains[+r.dataset.band] = 0;
+      setEq({ gains, preset: Object.keys(EQ_PRESETS).find(k => EQ_PRESETS[k][1].every((g, i) => g === gains[i])) || "custom" });
+      draw();
+    });
+    const tick = setInterval(() => {
+      const m = $("#fxMeter", box);
+      if (!m) clearInterval(tick); else m.textContent = meter();
+    }, 1000);
+    draw();
+  }, "sheet");
+}
+
+/* ---------- dinleme kaydı: gerçekten çalınan süre, oturum oturum ---------- */
+const LS = { session: null, track: null, seconds: 0, sent: 0, last: 0 };
+function listenFlush() {
+  if (LS.session && LS.seconds >= 5 && LS.seconds - LS.sent >= 1) {
+    LS.sent = LS.seconds;
+    api.listen(LS.session, plain(LS.track), Math.round(LS.seconds));
+  }
+}
+function listenEnd() { listenFlush(); LS.session = null; LS.track = null; }
+setInterval(() => {
+  const now = performance.now(), dt = (now - LS.last) / 1000;
+  LS.last = now;
+  const t = P.current;
+  if (!t || P.loading || A.paused || !A.src || A.readyState < 3) return;
+  if (!LS.track || LS.track.id !== t.id) {
+    listenEnd();
+    LS.session = `${Date.now()}:${t.id}`; LS.track = t; LS.seconds = 0; LS.sent = 0;
+    return;
+  }
+  LS.seconds += Math.min(dt, 5);  // pencere arka plandayken zamanlayıcı yavaşlar; uyku gibi uzun boşluklar sayılmaz
+  if (LS.seconds - LS.sent >= 10) listenFlush();
+}, 1000);
 const STEP = 3;           // perdenin sütun aralığı (px)
 let heights = new Float32Array(0), beat = 0, bassAvg = 0;
 flame.addEventListener("pointerenter", () => flameHover = true);
@@ -1906,6 +2240,7 @@ function folderMenu(id, x, y) {
 
 /* tıklamalar: data-act ile */
 const ACT = {
+  statsPeriod: el => { S.statsPeriod = el.dataset.k; renderPage(true); },
   play(el) {
     const holder = el.closest("[data-list]"), list = S.lists[holder.dataset.list], i = +holder.dataset.i, t = list.tracks[i];
     if (P.current && P.current.id === t.id) P.toggle();
@@ -2281,6 +2616,19 @@ $("#searchClear").onclick = e => {
 };
 $("#backBtn").onclick = goBack;
 $("#fwdBtn").onclick = goForward;
+const statTip = document.createElement("div");
+statTip.id = "statTip";
+statTip.className = "hidden";
+document.body.appendChild(statTip);
+document.addEventListener("pointermove", e => {
+  const col = e.target.closest && e.target.closest("[data-tip]");
+  statTip.classList.toggle("hidden", !col);
+  if (!col) return;
+  statTip.textContent = col.dataset.tip;
+  const r = col.getBoundingClientRect(), w = statTip.offsetWidth;
+  statTip.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + "px";
+  statTip.style.top = Math.max(8, e.clientY - 40) + "px";
+});
 $$("#nav a").forEach(a => a.onclick = () => a.dataset.page === "search" ? ACT.focusSearch() : openPage(a.dataset.page));
 $("#newBtn").onclick = e => { e.stopPropagation(); menuAt([{ label: "Yeni albüm", act: () => createAlbum() }, { label: "Yeni klasör", act: () => createFolder() }], $("#newBtn")); };
 $("#accountBtn").onclick = () => openSettings();

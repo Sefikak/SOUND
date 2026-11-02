@@ -15,6 +15,10 @@ Kaldırmak için: **Ayarlar → Uygulamalar → SOUND → Kaldır** (kitaplığ�
 
 **Gereksinimler:** Windows 10/11 (64 bit), internet bağlantısı.
 
+## Mobil sürüm
+
+📱 **Yakında**
+
 ## Özellikler
 
 - Şarkı, albüm ve sanatçı arama (YouTube Music), sanatçı sayfaları, radyo ve otomatik devam

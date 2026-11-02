@@ -15,9 +15,16 @@ Kaldırmak için: **Ayarlar → Uygulamalar → SOUND → Kaldır** (kitaplığ�
 
 **Gereksinimler:** Windows 10/11 (64 bit), internet bağlantısı.
 
-## Mobil sürüm
+## Mobil sürüm (Android)
 
-📱 **Yakında**
+### [⬇ SOUND-android-0.1.0.apk'yı indir](https://github.com/Sefikak/SOUND/raw/android-0.1.0/SOUND-android-0.1.0.apk)
+
+**Erken deneme sürümü:** Şimdiye kadar yalnızca emülatörde denendi, telefonda sorun çıkabilir.
+
+1. APK'yı telefona indirip aç. Telefon sorarsa bilinmeyen kaynaktan kurma iznini ver.
+2. Android 8.0 veya üstü gerekir (64 bit).
+
+Henüz yok: video indirme, YouTube Music ve Spotify'dan içe aktarma, yaş doğrulamalı şarkılar. Güncellemeler otomatik gelmez; yeni sürüm için APK'yı yeniden indirip üzerine kur.
 
 ## Özellikler
 

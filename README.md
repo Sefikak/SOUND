@@ -17,14 +17,14 @@ Kaldırmak için: **Ayarlar → Uygulamalar → SOUND → Kaldır** (kitaplığ�
 
 ## Mobil sürüm (Android)
 
-### [⬇ SOUND-android-0.1.0.apk'yı indir](https://github.com/Sefikak/SOUND/raw/android-0.1.0/SOUND-android-0.1.0.apk)
+### [⬇ SOUND-android-0.1.1.apk'yı indir](https://github.com/Sefikak/SOUND/raw/android-0.1.1/SOUND-android-0.1.1.apk)
 
-**Erken deneme sürümü:** Şimdiye kadar yalnızca emülatörde denendi, telefonda sorun çıkabilir.
+**Erken deneme sürümü:** Şimdiye kadar yalnızca emülatörde denendi, telefonda sorun çıkabilir. 32 ve 64 bit telefonlarda kurulabilir.
 
 1. APK'yı telefona indirip aç. Telefon sorarsa bilinmeyen kaynaktan kurma iznini ver.
-2. Android 8.0 veya üstü gerekir (64 bit).
+2. Android 8.0 veya üstü gerekir.
 
-Henüz yok: video indirme, YouTube Music ve Spotify'dan içe aktarma, yaş doğrulamalı şarkılar. Güncellemeler otomatik gelmez; yeni sürüm için APK'yı yeniden indirip üzerine kur.
+Henüz yok: video indirme, YouTube Music'ten ve Spotify dosyasından içe aktarma, yaş doğrulamalı şarkılar. Güncellemeler otomatik gelmez; yeni sürüm için APK'yı yeniden indirip üzerine kur.
 
 ## Özellikler
 

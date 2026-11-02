@@ -1,0 +1,110 @@
+/* Telefon yerleşimi: masaüstü style.css'in üstüne biner. */
+html.mobile, html.mobile body { user-select: none; -webkit-tap-highlight-color: transparent; }
+html.mobile { --bar-h: 64px; --tabs-h: 56px; }
+html.mobile #app { display: flex; flex-direction: column; padding: 0; gap: 0; height: 100%; }
+html.mobile #main { flex: 1 1 0; min-height: 0; border-radius: 0; order: 1; }
+html.mobile ::-webkit-scrollbar { display: none; }
+
+/* alt sekmeler */
+#mTabs { order: 3; flex: none; display: grid; grid-template-columns: repeat(4, 1fr); height: var(--tabs-h); background: #000; }
+#mTabs button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: var(--muted); font-size: 11px; font-weight: 600; }
+#mTabs button svg { width: 23px; height: 23px; }
+#mTabs button.on { color: var(--text); }
+#mTabs button.on svg { color: var(--accent-light); }
+
+/* kitaplık: kenar çubuğu tam ekran açılır */
+html.mobile #side { display: none; }
+html.mobile body.m-lib #side { display: flex; position: fixed; z-index: 30; inset: 0 0 calc(var(--tabs-h) + var(--bar-h)) 0; padding: 8px; background: #000; width: auto; }
+html.mobile #side .lib { flex: 1 1 0; min-height: 0; }
+
+/* küçük çalar */
+html.mobile #bar { order: 2; flex: none; display: flex; align-items: center; gap: 4px; height: var(--bar-h); padding: 6px 8px; margin: 0; background: var(--raise2); position: relative; z-index: 31; }
+html.mobile #bar .np { flex: 1 1 0; min-width: 0; gap: 10px; }
+html.mobile #bar .np img { width: 48px; height: 48px; }
+html.mobile #bar .np .rb { display: none; }
+html.mobile #bar .center { flex: none; display: block; width: auto; margin: 0; }
+html.mobile #bar .ctrl { position: static; transform: none; translate: none; height: auto; padding: 0; margin: 0; gap: 2px; background: none; box-shadow: none; border-radius: 0; }
+html.mobile #bar .ctrl::before, html.mobile #bar .ctrl::after { display: none; }
+html.mobile #bar .pp { width: 44px; height: 44px; }
+html.mobile #bar .ib { width: 44px; height: 44px; display: grid; place-items: center; }
+html.mobile #bar #shuffleBtn, html.mobile #bar #prevBtn, html.mobile #bar #repeatBtn, html.mobile #bar .prog, html.mobile #bar .right { display: none; }
+
+/* tam ekran çalar: sağ panel tüm ekranı kaplar, denetimler altta */
+html.mobile #panel { display: none; }
+html.mobile #app.panel-open #panel { display: block; position: fixed; z-index: 40; inset: 0 0 150px 0; width: auto; border-radius: 0; overflow: hidden; }
+html.mobile #app.panel-open #panel .inner { width: 100%; height: 100%; overflow-y: auto; }
+html.mobile #app.panel-open #mTabs { visibility: hidden; }
+html.mobile #app.panel-open #bar { position: fixed; z-index: 41; left: 0; right: 0; bottom: 0; height: 150px; padding: 10px 16px 14px; display: block; background: var(--bg); }
+html.mobile #app.panel-open #bar .np { display: none; }
+html.mobile #app.panel-open #bar .center { display: flex; flex-direction: column-reverse; gap: 8px; width: 100%; }
+html.mobile #app.panel-open #bar .ctrl { justify-content: space-between; width: 100%; }
+html.mobile #app.panel-open #bar #shuffleBtn, html.mobile #app.panel-open #bar #prevBtn, html.mobile #app.panel-open #bar #repeatBtn { display: grid; }
+html.mobile #app.panel-open #bar .pp { width: 60px; height: 60px; }
+html.mobile #app.panel-open #bar .prog { display: flex; margin: 0; align-items: flex-end; }
+
+/* üst çubuk */
+html.mobile #topbar { padding: 8px 12px; gap: 6px; }
+html.mobile #fwdBtn, html.mobile #undoBtn { display: none; }
+html.mobile #backBtn:disabled { display: none; }
+html.mobile .searchwrap { flex: 1 1 0; min-width: 0; width: auto; }
+
+/* içerik */
+html.mobile .pad { padding-left: 14px; padding-right: 14px; }
+html.mobile .thead { display: none; }
+html.mobile .row { grid-template-columns: 48px minmax(0, 1fr) auto auto auto; padding: 6px 8px 6px 14px; column-gap: 6px; border-radius: 0; }
+html.mobile .row .num, html.mobile .row .rb.dl, html.mobile .row .rb.rm, html.mobile .row .dur { display: none; }
+html.mobile #page:has(.st-tiles) .row .dur { display: block; }
+html.mobile .row .rb.more, html.mobile .row .rb.heart:not(.on) { opacity: 1; }
+html.mobile .row .rb { width: 38px; height: 44px; display: grid; place-items: center; }
+html.mobile .row .th { width: 48px; height: 48px; }
+html.mobile .dur { font-size: 12.5px; }
+html.mobile .cards { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+html.mobile .card .acts .cdl, html.mobile .card .acts .cfav { display: none; }
+html.mobile .st-head h1 { font-size: 26px; }
+html.mobile .st-head { padding-top: 8px; }
+html.mobile .st-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+html.mobile .st-big { grid-column: 1 / -1; }
+html.mobile .st-grid, html.mobile .st-bars { left: 52px; }
+html.mobile #modal.sheet { place-items: end center; padding: 0; background: #0006; }
+html.mobile #modal.sheet .dialog { width: 100%; max-height: 88vh; border-radius: 14px 14px 0 0; }
+html.mobile .dialog:has(#setBody) { width: 100%; max-height: 90vh; }
+html.mobile .set-row { gap: 12px; }
+html.mobile .fx-bands input[type=range] { height: 110px; }
+html.mobile .menu { max-width: 92vw; }
+
+/* telefonda karşılığı olmayan ayarlar: pencere yerleşimi, git güncellemesi, bilgisayar tarayıcısıyla giriş ve içe aktarma */
+html.mobile .set-row:has([data-k="side"], [data-k="bar"], [data-k="np"], [data-k="ctrl"], [data-rng="zoom"], [data-rng="side_w"], [data-tog="hist_btns"], [data-tog="undo_btn"]) { display: none; }
+html.mobile .set-sec:has(+ .set-row [data-k="side"]) { display: none; }
+html.mobile .set-row:has([data-x="loginYtm"], [data-x="account"]) { display: none; }
+html.mobile .set-sec:has(+ .set-row [data-x="account"]) { display: none; }
+html.mobile [data-act="panelDl"][data-kind="video"] { display: none; }
+
+/* albüm, favoriler, indirilenler başlığı */
+html.mobile .hero { flex-direction: column; align-items: flex-start; gap: 14px; padding: 4px 14px 16px; }
+html.mobile .hero .art { width: 150px; height: 150px; }
+html.mobile .hero h1 { font-size: 32px !important; letter-spacing: -.5px; margin: 2px 0 6px; overflow-wrap: anywhere; }
+html.mobile .actions { padding: 4px 14px 14px; gap: 12px; flex-wrap: wrap; }
+html.mobile [data-act="openFolder"] { display: none; }
+
+/* çok seçenekli düğme grupları dar ekranda alt satıra geçsin */
+html.mobile .set-row:has(.seg) { flex-wrap: wrap; }
+html.mobile .set-row .seg { flex-wrap: wrap; border-radius: 16px; max-width: 100%; }
+
+/* Spotify penceresi: telefonda dosya seçme henüz yok, bağlantıyla ve hesapla aktarma var */
+html.mobile .dialog p:has([data-x="privacy"]), html.mobile .dialog div:has(> [data-x="files"]) { display: none !important; }
+html.mobile ol.steps { padding-left: 20px; }
+html.mobile .copyline code { overflow-wrap: anywhere; }
+html.mobile .dialog { max-height: 92vh; overflow-y: auto; }
+
+/* ayarlar ve istatistikler alt sekmeden açılır */
+html.mobile #nav a[data-page="stats"], html.mobile .account { display: none; }
+
+/* alev: büyük dokunma alanı, parmakla sarma sayfayı oynatmasın */
+html.mobile #app.panel-open #bar { height: 186px; }
+html.mobile #app.panel-open #panel { bottom: 186px; }
+html.mobile #app.panel-open #bar .prog { height: 72px; gap: 6px; }
+html.mobile #flame { flex: 1 1 0; min-width: 0; width: auto; height: 72px; touch-action: none; }
+html.mobile #app.panel-open #bar .prog span { width: 38px; font-size: 12px; }
+#mProg { position: absolute; left: 0; top: 0; height: 2px; width: 0; background: var(--accent-light); display: block; }
+html.mobile #app.panel-open #mProg { display: none; }
+html.mobile #updateBox { left: 12px; right: 12px; width: auto; bottom: 150px; }

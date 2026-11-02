@@ -26,7 +26,7 @@ Kaldırmak için: **Ayarlar → Uygulamalar → SOUND → Kaldır** (kitaplığ�
 
 0.1.3'ten itibaren uygulama kendini günceller: yeni sürümü Wi-Fi'da indirir, yüklemek için onayını ister. Kaynak kodu [`mobile` dalında](https://github.com/Sefikak/SOUND/tree/mobile).
 
-Henüz yok: video indirme, YouTube Music'ten ve Spotify dosyasından içe aktarma, yaş doğrulamalı şarkılar. Güncellemeler otomatik gelmez; yeni sürüm için APK'yı yeniden indirip üzerine kur.
+Henüz yok: video indirme, YouTube Music'ten ve Spotify dosyasından içe aktarma, yaş doğrulamalı şarkılar.
 
 ## Özellikler
 

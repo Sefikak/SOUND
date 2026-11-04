@@ -111,6 +111,18 @@ def build_home(recent, top_artists, known_ids):
         return {"key": "albums", "type": "albums", "title": title,
                 "subtitle": "Sürükleyip kitaplığına bırakabilirsin", "albums": albums}
 
+    def playlist_section():
+        query = f"{top_artists[0][0]} şarkıları" if top_artists else "türkçe hit listesi"
+        try:
+            lists = search_playlists(query, 12)
+        except Exception as error:
+            errors.append(error)
+            return None
+        if not lists:
+            return None
+        return {"key": "playlists", "type": "albums", "title": "Senin için listeler",
+                "subtitle": "Dinlediklerine yakın çalma listeleri", "albums": lists}
+
     if seeds:
         with ThreadPoolExecutor(5) as pool:
             jobs = {seed: pool.submit(mix_for, seed) for seed in seeds + [s for _, s in artist_seeds]}
@@ -128,6 +140,9 @@ def build_home(recent, top_artists, known_ids):
         albums = album_section()
         if albums:
             sections.append(albums)
+        lists = playlist_section()
+        if lists:
+            sections.append(lists)
         for artist, seed in artist_seeds:
             picks = take(mixes.get(seed, []), 12)
             if picks:
@@ -149,6 +164,9 @@ def build_home(recent, top_artists, known_ids):
         albums = album_section()
         if albums:
             sections.insert(min(1, len(sections)), albums)
+        lists = playlist_section()
+        if lists:
+            sections.insert(min(2, len(sections)), lists)
         if sections:
             return sections, True
 

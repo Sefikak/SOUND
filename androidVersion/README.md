@@ -35,9 +35,12 @@ APK dallara değil etikete konur; masaüstü kullanıcılarının `git fetch`'i 
 ## Mobilde henüz olmayanlar
 
 - Video indirme (görüntü ve sesi birleştirmek için ffmpeg gerekir). Video izleme çalışır.
-- YouTube Music içe aktarma, Spotify dosyasıyla aktarma ve yaş doğrulamalı şarkılar için YouTube hesabı. Spotify hesabıyla ve liste bağlantısıyla aktarma var; giriş telefonun tarayıcısında açılır.
-- yt-dlp'nin tek başına güncellenmesi: paket APK'nın içinde, yenisi için yeni sürüm yayınlanır.
+- Spotify dosyasıyla aktarma. Spotify hesabıyla ve liste bağlantısıyla aktarma var; Spotify girişi telefonun tarayıcısında, Google girişi uygulamanın içinde açılır.
 - Sürükle-bırak: yerine ⋯ menüsü kullanılır.
+
+## yt-dlp güncellemesi
+
+`updater.py` günde bir PyPI'a bakar, yeni sürümü SHA-256 ile doğrulayıp veri klasörüne açar; sürüm bir sonraki açılışta APK'dakinin önüne geçer. Yüklenemeyen, uygulamayı düşüren ya da gerçek bir videoyu çözemeyen sürüm bir daha kullanılmaz, son sağlam sürüme dönülür. Python 3.11'i bırakan sürümler indirilmez.
 
 ## Python sürümü
 

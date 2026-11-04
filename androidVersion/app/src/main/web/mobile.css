@@ -72,11 +72,9 @@ html.mobile .set-row { gap: 12px; }
 html.mobile .fx-bands input[type=range] { height: 110px; }
 html.mobile .menu { max-width: 92vw; }
 
-/* telefonda karşılığı olmayan ayarlar: pencere yerleşimi, git güncellemesi, bilgisayar tarayıcısıyla giriş ve içe aktarma */
+/* telefonda karşılığı olmayan ayarlar: pencere yerleşimi, git güncellemesi */
 html.mobile .set-row:has([data-k="side"], [data-k="bar"], [data-k="np"], [data-k="ctrl"], [data-rng="zoom"], [data-rng="side_w"], [data-tog="hist_btns"], [data-tog="undo_btn"]) { display: none; }
 html.mobile .set-sec:has(+ .set-row [data-k="side"]) { display: none; }
-html.mobile .set-row:has([data-x="loginYtm"], [data-x="account"]) { display: none; }
-html.mobile .set-sec:has(+ .set-row [data-x="account"]) { display: none; }
 html.mobile [data-act="panelDl"][data-kind="video"] { display: none; }
 
 /* albüm, favoriler, indirilenler başlığı */

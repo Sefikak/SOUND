@@ -16,6 +16,27 @@
   tabs.innerHTML = TABS.map(([k, n, i]) => `<button data-tab="${k}">${i}<span>${n}</span></button>`).join("");
   $("#app").appendChild(tabs);
 
+  /* YouTube hesabı: telefonda tarayıcı çerezi ya da cookies.txt yok, tek yol uygulama içi Google girişi */
+  openAccount = async (reason = null, onConnected = null) => {
+    const status = await api.auth_status();
+    const connected = !status.includes("bağlı değil");
+    await modal(`<h3>YouTube hesabı</h3>${reason ? `<p class="reason">${esc(reason)}</p>` : ""}
+      <p>Hesap asıl olarak beğenilen şarkıları ve albümleri aktarmak içindir. Yaş sınırını telefonda genelde kaldırmaz; SOUND bunun yerine aynı şarkının kısıtsız bir yüklemesini arar.</p>
+      <div class="status">${esc(connected ? "Google hesabına giriş yapıldı." : "Giriş yapılmadı.")}</div>
+      <div class="row-btns">${connected ? `<button class="textbtn" data-x="out">Hesaptan çık</button>` : `<button class="pill fill" data-x="in">Google hesabınla giriş yap</button>`}<button class="pill" data-x="close">Kapat</button></div>`,
+      (box, done) => {
+        const on = (x, fn) => { const b = $(`[data-x="${x}"]`, box); if (b) b.onclick = fn; };
+        on("close", () => done(null));
+        on("out", async () => { await api.auth_clear(); toast("Hesaptan çıkıldı"); done(null); });
+        on("in", async () => {
+          const res = await api.login_import("ytmusic", null, false);
+          if (res.error) return toast(res.error, true);
+          accountDone = onConnected;
+          done(null);
+        });
+      });
+  };
+
   const libOpen = on => { document.body.classList.toggle("m-lib", on); syncTabs(); };
   function syncTabs() {
     const lib = document.body.classList.contains("m-lib"), kind = S.page && S.page.kind;

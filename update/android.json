@@ -1,9 +1,11 @@
 {
-  "versionCode": 4,
-  "versionName": "0.1.3",
-  "sha256": "c2ce8d281faf403310d3b39277114f40abadcf2b74e0ccad8771407616c3538c",
-  "url": "https://github.com/Sefikak/SOUND/raw/android-0.1.3/SOUND-android-0.1.3.apk",
+  "versionCode": 5,
+  "versionName": "0.1.4",
+  "sha256": "a643ed303a18311c42ca6c847df04cdc72267698b0062882e18ccf0520ea72d4",
+  "url": "https://github.com/Sefikak/SOUND/raw/android-0.1.4/SOUND-android-0.1.4.apk",
   "notes": [
-    "Uygulama artık kendini güncelliyor: Wi-Fi'da yeni sürümü indirir, yüklemek için onay ister"
+    "yt-dlp artık kendini güncelliyor",
+    "Yaş sınırlı şarkılarda aynı şarkının kısıtsız yüklemesi aranıyor",
+    "YouTube Music: Google hesabınla beğenilen şarkıları, albümleri ve listeleri aktar"
   ]
 }

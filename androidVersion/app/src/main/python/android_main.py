@@ -9,6 +9,7 @@ import types
 
 _api = None
 _backend = None
+_login = None
 
 
 class Window:
@@ -100,6 +101,42 @@ class _Events:
         self.closed = _Signal()
 
 
+class _InAppLogin:
+    """Google girişi uygulamanın içinde açılır: oturum çerezleri tarayıcıdan okunamaz, kendi görünümümüzden okunur.
+    pywebview penceresinin Backend'in kullandığı kısmı."""
+
+    def __init__(self, native, url):
+        self.native = native
+        self.events = _Events()
+        native.openLogin(url)
+
+    def get_current_url(self):
+        return self.native.loginUrl()
+
+    def get_cookies(self):
+        from http.cookies import CookieError, SimpleCookie
+        jar = SimpleCookie()
+        for part in (self.native.loginCookies() or "").split(";"):
+            name, _, value = part.strip().partition("=")
+            try:
+                jar[name] = value
+            except CookieError:
+                continue
+            jar[name]["domain"] = ".youtube.com"
+            jar[name]["path"] = "/"
+            jar[name]["secure"] = True
+        return [jar]
+
+    def destroy(self):
+        self.native.closeLogin()
+
+
+def login_closed():
+    """Kullanıcı giriş ekranını kapattı (Kotlin çağırır)."""
+    if _login:
+        _login.events.closed.fire()
+
+
 class _BrowserLogin:
     """Masaüstünde giriş ayrı pencerede açılır; telefonda tarayıcıda. Spotify sonunda 127.0.0.1'deki
     uygulamaya döner. Kullanıcı vazgeçerse bekleyiş bir süre sonra kendiliğinden biter."""
@@ -120,16 +157,18 @@ def _patch_login(native, backend):
     import webview
 
     def create_window(title, url, **kwargs):
-        if "accounts.spotify.com" not in url:
-            raise RuntimeError("Bu özellik mobil sürümde henüz yok")
-        native.openUrl(url)
-        return _BrowserLogin()
+        global _login
+        if "accounts.spotify.com" in url:
+            native.openUrl(url)
+            return _BrowserLogin()
+        _login = _InAppLogin(native, url)
+        return _login
     webview.create_window = create_window
     webapp.webbrowser = types.SimpleNamespace(open=native.openUrl)
 
     original = backend.login_import
 
-    def login_import(service, client_id=None):
+    def login_import(service, client_id=None, start_import=True):
         # tarayıcıda yarım kalan giriş yenisini engellemesin: öncekini bitir, kapısının boşalmasını bekle
         previous = backend.login_window
         if previous:
@@ -138,8 +177,20 @@ def _patch_login(native, backend):
                 if not backend.login_window:
                     break
                 time.sleep(0.1)
-        return original(service, client_id)
+        return original(service, client_id, start_import)
     backend.login_import = login_import
+
+    forget = _api.auth_clear
+
+    def auth_clear():
+        """Hesaptan çıkınca oturum telefonda kalmasın: dosya ve giriş ekranının çerezleri silinir."""
+        import downloader
+        status = forget()
+        native.clearLogin()
+        if os.path.exists(downloader.COOKIE_FILE):
+            os.remove(downloader.COOKIE_FILE)
+        return status
+    _api.auth_clear = auth_clear
 
 
 def _patch_update(native, data_dir):
@@ -168,6 +219,8 @@ def start(data_dir, native):
     import webui
     import mediaserver
     mediaserver.WEB_DIR = os.path.dirname(webui.__file__)
+    import updater
+    updater.activate(data_dir)  # yt_dlp'yi ilk içe aktaran webapp'tan önce: indirilmiş sürüm öne geçsin
     import webapp
     _patch_downloads()
     _backend = webapp.Backend()
@@ -182,6 +235,7 @@ def start(data_dir, native):
         original(state)
         native.playerState(json.dumps(state, ensure_ascii=False))
     _backend.player_state = player_state
+    threading.Timer(30, updater.verify).start()
     return mediaserver.start() + "/index.html"
 
 

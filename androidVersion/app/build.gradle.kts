@@ -33,6 +33,7 @@ val syncSound by tasks.registering(Sync::class) {
                     .replace("indirme simgesine tıkla", "⋯ menüsünden indir")
                     .replace("<b>Spotify bağlantı ya da dosya</b>", "<b>Spotify liste bağlantısı</b>")
                     .replace("Premium gerekmez: liste bağlantıları ya da hesap verisi dosyanla aktarılır.", "Premium gerekmez: liste bağlantılarını yapıştırarak aktarılır.")
+                    .replace("Giriş penceresi açıldı; giriş yapınca aktarma kendiliğinden başlar", "Google hesabınla giriş yap; aktarma kendiliğinden başlar")
                     .replace("Spotify giriş penceresi açıldı; izin verince aktarma kendiliğinden başlar", "Spotify tarayıcıda açıldı; izin verdikten sonra SOUND'a geri dön")
                     .replace("GitHub'da yeni sürüm çıkınca SOUND kendini arka planda günceller; yeniden başlatınca etkin olur.", "Yeni sürüm Wi-Fi'da kendiliğinden iner, yüklemeden önce onayını ister. Mobil veride yalnızca Şimdi denetle düğmesiyle iner (yaklaşık 60 MB). Kitaplığın silinmez.")
                     .replace("data-x=\"restart\">Yeniden başlat<", "data-x=\"restart\">Yükle<")
@@ -60,8 +61,8 @@ android {
         applicationId = "com.sound.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.1.3"
+        versionCode = 5
+        versionName = "0.1.4"
         // armeabi-v7a: 64 bit işlemcili olsa da 32 bit Android kullanan telefonlar (çoğu uygun fiyatlı Samsung) için
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }

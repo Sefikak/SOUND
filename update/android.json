@@ -1,11 +1,12 @@
 {
-  "versionCode": 5,
-  "versionName": "0.1.4",
-  "sha256": "a643ed303a18311c42ca6c847df04cdc72267698b0062882e18ccf0520ea72d4",
-  "url": "https://github.com/Sefikak/SOUND/raw/android-0.1.4/SOUND-android-0.1.4.apk",
+  "versionCode": 6,
+  "versionName": "0.1.5",
+  "sha256": "737ef2da6a558ca222571c1895f42172e7fe305b58fde84fa108e5b3a559d118",
+  "url": "https://github.com/Sefikak/SOUND/raw/android-0.1.5/SOUND-android-0.1.5.apk",
   "notes": [
-    "yt-dlp artık kendini güncelliyor",
-    "Yaş sınırlı şarkılarda aynı şarkının kısıtsız yüklemesi aranıyor",
-    "YouTube Music: Google hesabınla beğenilen şarkıları, albümleri ve listeleri aktar"
+    "Yeni görünüm: küçük kartlar, radyolar ve liste önerileri",
+    "Küçük çalar: sağa kaydır sonraki, sola kaydır önceki, kalp düğmesi",
+    "Tam ekran çalar aşağı kaydırınca küçülür",
+    "Sekmeler: Ana sayfa, Ara, Kitaplık, Ayarlar"
   ]
 }

@@ -106,3 +106,105 @@ html.mobile #app.panel-open #bar .prog span { width: 38px; font-size: 12px; }
 #mProg { position: absolute; left: 0; top: 0; height: 2px; width: 0; background: var(--accent-light); display: block; }
 html.mobile #app.panel-open #mProg { display: none; }
 html.mobile #updateBox { left: 12px; right: 12px; width: auto; bottom: 150px; }
+
+/* ---------- 0.1.5: yeni görünüm ---------- */
+html.mobile { --bar-h: 70px; --m-tint: #3b2470; }
+html.mobile.m-idle { --bar-h: 0px; }
+html.mobile.m-idle #bar { display: none; }
+html.mobile body, html.mobile #app, html.mobile #main { background: #000; }
+html.mobile .m-anim { transition: transform .2s ease-out, opacity .2s ease-out; }
+
+/* sekmeler */
+#mTabs { background: #000; }
+#mTabs button { color: #9a9a9a; font-size: 10.5px; font-weight: 500; }
+#mTabs button.on { color: #fff; font-weight: 700; }
+#mTabs button.on svg { color: #fff; fill: #ffffff22; }
+
+/* ana sayfa */
+html.mobile body.m-home #topbar { display: none; }
+.m-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 0 14px; }
+.m-head h1 { font-size: 24px; font-weight: 800; letter-spacing: -.4px; }
+html.mobile .quick { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-gap: 8px; gap: 8px; }
+html.mobile .q { height: 56px; border-radius: 6px; background: #ffffff17; overflow: hidden; }
+html.mobile .q > img, html.mobile .q > .tile { width: 56px; height: 56px; box-shadow: none; margin-right: 10px; }
+html.mobile .q { gap: 0; }
+html.mobile .q b { padding-right: 8px; font-size: 12.5px; line-height: 1.25; }
+html.mobile .sec { margin: 26px 0 10px; align-items: center; }
+html.mobile .sec h2 { font-size: 20px; letter-spacing: -.3px; }
+html.mobile .home-page .list { margin: 0 -14px; }
+html.mobile .home-page { padding-bottom: 20px; }
+
+/* kartlar her sayfada küçük ve yana kayar */
+html.mobile .cards { display: flex; grid-gap: 0; gap: 0; overflow-x: auto; margin: 0 -14px; padding: 0 2px 0 14px; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
+html.mobile .card { flex: 0 0 128px; width: 128px; margin-right: 12px; padding: 0; background: none; border-radius: 0; box-shadow: none; scroll-snap-align: start; scroll-margin-left: 14px; }
+html.mobile .card .cover { position: relative; width: 128px; height: 128px; border-radius: 6px; overflow: hidden; }
+html.mobile .card.circle .cover { border-radius: 50%; }
+html.mobile .card .cover img { width: 100%; height: 100%; object-fit: cover; transform: none; }
+html.mobile .card .ct { margin-top: 8px; font-size: 12.5px; font-weight: 600; line-height: 1.3; height: auto; max-height: 2.6em; }
+html.mobile .card .cfoot { margin-top: 2px; min-height: 0; display: block; }
+html.mobile .card .cfoot span { font-size: 11.5px; color: var(--sub); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html.mobile .card .acts { display: none; }
+html.mobile .card.circle .ct { text-align: center; }
+.m-radio .cover span { position: absolute; left: 6px; top: 6px; padding: 2px 6px; border-radius: 4px; background: #000000b3; color: #fff; font-size: 9px; font-weight: 800; letter-spacing: .6px; }
+
+/* liste satırları */
+html.mobile .row { padding: 5px 4px 5px 14px; background: none; }
+html.mobile .row .th { width: 46px; height: 46px; border-radius: 4px; }
+html.mobile .row .t { font-size: 14.5px; font-weight: 500; }
+html.mobile .row .a { font-size: 12.5px; }
+
+/* küçük çalar: içeriğin üstünde duran yuvarlak kart */
+html.mobile #bar { height: 64px; margin: 0 8px 6px; padding: 8px; border-radius: 10px; overflow: hidden; touch-action: none;
+  background: linear-gradient(#00000059, #00000059), var(--m-tint); transition: background .5s; }
+html.mobile #bar .np img { width: 48px; height: 48px; border-radius: 5px; }
+html.mobile #bar .np .t { font-size: 13.5px; font-weight: 700; color: #fff; }
+html.mobile #bar .np .a { font-size: 12px; color: #ffffffbf; }
+html.mobile #bar .np .rb.heart { display: grid; place-items: center; flex: none; width: 40px; height: 44px; opacity: 1; color: #fff; }
+html.mobile #bar .np .rb.heart svg { width: 22px; height: 22px; }
+html.mobile #bar .np .rb.heart.on { color: var(--accent-light); }
+html.mobile #bar .pp { width: 42px; height: 42px; background: none; color: #fff; box-shadow: none; }
+html.mobile #bar .pp svg { width: 26px; height: 26px; }
+html.mobile #bar #nextBtn { display: none; }
+#mProg { left: 8px; right: auto; top: auto; bottom: 0; height: 2px; background: #fff; border-radius: 2px; max-width: calc(100% - 16px); }
+
+/* tam ekran çalar */
+html.mobile #app.panel-open #panel { background: linear-gradient(180deg, var(--m-tint) 0%, #121212 72%); animation: m-up .22s ease-out; }
+html.mobile #app.panel-open #panel .inner { padding: 0 22px 20px; background: none; }
+html.mobile #panel .p-head { position: static; background: none; padding: 12px 0 14px; }
+html.mobile #panel .p-head .grow { order: 1; text-align: center; font-size: 13px; font-weight: 600; }
+html.mobile #panel .p-head [data-act="closePanel"] { order: 0; background: none; }
+html.mobile #panel .p-head [data-act="closePanel"] svg { width: 26px; height: 26px; }
+html.mobile #panel .p-head .seg { order: 2; background: #00000033; }
+html.mobile #panel .p-head .seg button { padding: 4px 9px; font-size: 11.5px; }
+html.mobile #panel .p-media { border-radius: 8px; box-shadow: 0 14px 36px #00000080; }
+html.mobile #panel .p-title { margin: 20px 0 10px; }
+html.mobile #panel .p-title .t { font-size: 21px; }
+html.mobile #app.panel-open #bar { margin: 0; border-radius: 0; overflow: visible; background: #121212; animation: m-up .22s ease-out; }
+html.mobile #app.panel-open #bar #nextBtn { display: grid; }
+html.mobile #app.panel-open #bar .pp { background: #fff; color: #000; }
+html.mobile #app.panel-open #bar .pp svg { width: 28px; height: 28px; }
+@keyframes m-up { from { transform: translateY(100%); } to { transform: none; } }
+
+/* kitaplık */
+html.mobile #nav a[data-page="home"], html.mobile #nav a[data-page="search"] { display: none; }
+html.mobile body.m-lib #side { background: #000; padding: 8px 10px; }
+html.mobile #side .box { background: none; }
+html.mobile #side .li img, html.mobile #side .li .tile { border-radius: 4px; }
+html.mobile #updateBox { bottom: 146px; }
+
+/* düzeltmeler */
+html.mobile .home-page { padding-top: 0; margin-top: 0; }
+html.mobile body.m-home #page { padding-top: 0; margin-top: 0; }
+.m-head { padding-top: 14px; }
+html.mobile #glow { height: 300px; opacity: .6; -webkit-mask-image: linear-gradient(#000, transparent); mask-image: linear-gradient(#000, transparent); }
+html.mobile .list { margin-left: 0; margin-right: 0; padding: 0; }
+html.mobile .home-page .list { margin: 0 -14px; padding: 0; }
+html.mobile .row { margin: 0; width: auto; }
+html.mobile #bar .np .tt { flex: 1 1 0; min-width: 0; padding: 0; }
+html.mobile .card.circle .cfoot span { text-align: center; }
+html.mobile #panel .p-head [data-act="closePanel"] { color: #fff; }
+
+/* Chrome 87 öncesi WebView "inset" bilmez: konumlar ayrıca yazılır, yoksa panel ve kitaplık yüksekliğini sınırlayamaz */
+html.mobile body.m-lib #side { top: 0; left: 0; right: 0; bottom: calc(var(--tabs-h) + var(--bar-h)); }
+html.mobile #app.panel-open #panel { top: 0; left: 0; right: 0; bottom: 186px; }
+html.mobile #glow { top: 0; left: 0; right: 0; }

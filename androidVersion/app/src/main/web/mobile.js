@@ -3,6 +3,23 @@
   const root = document.documentElement;
   root.classList.add("mobile");
 
+  /* varsayılan koyu tema telefonda bir ton açık ve vurgu renginden hafifçe renkli; Siyah, Gri ve Renkli seçenekleri değişmez */
+  const realApplyUI = applyUI;
+  applyUI = ui => {
+    realApplyUI(ui);
+    const u = uiOpts(ui);
+    if (u.bg !== "dark") return;
+    const accent = hexRgb(u.accent), tone = (base, f) => rgbHex(mixRgb(hexRgb(base), accent, f));
+    const style = root.style;
+    style.setProperty("--bg", tone("#1a1a1a", .07));
+    style.setProperty("--black", tone("#101010", .05));
+    style.setProperty("--card", tone("#262626", .09));
+    style.setProperty("--raise", tone("#2b2b2b", .09));
+    style.setProperty("--raise2", tone("#303030", .09));
+    style.setProperty("--card-hover", tone("#323232", .1));
+  };
+  try { applyUI((S.settings && S.settings.ui) || JSON.parse(localStorage.getItem("sound.ui") || "null")); } catch { }
+
   /* alt sekmeler */
   const icon = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
   const TABS = [
@@ -90,7 +107,7 @@
   /* ana sayfa: üstte küçük kısayollar, son dinlenenler liste halinde, öneriler yana kayan küçük kartlar */
   const radioHTML = (key, i, t) => `<div class="card m-radio" data-list="${key}" data-i="${i}">
     <div class="cover"><img loading="lazy" src="${thumb(t)}"><span>RADYO</span></div><div class="ct">${esc(t.title)} Radyosu</div>
-    <div class="cfoot"><span>${esc(t.artist)}</span></div></div>`;
+    <div class="cfoot"><span>${esc(t.artist)}</span><div class="acts"><button class="pbtn">${I.play}</button></div></div></div>`;
   pageHome = () => {
     afterRender = () => {
       const cur = P.current;
@@ -148,13 +165,39 @@
   line.id = "mProg";
   $("#bar").appendChild(line);
   let tintFor = null;
+  /* tam ekran arka planı: kapak 12x12'ye küçültülüp büyütülür; yumuşak renk geçişi verir, bulanıklık efekti gibi işlemci yemez */
+  const meshFrom = url => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const c = document.createElement("canvas");
+        c.width = c.height = 12;
+        c.getContext("2d").drawImage(img, 0, 0, 12, 12);
+        root.style.setProperty("--m-art", `url(${c.toDataURL("image/png")})`);
+      } catch { }
+    };
+    img.src = url;
+  };
+  /* kitaplıktaki Favoriler ve İndirilenler kartlarında şarkı sayısı */
+  const navCount = {};
+  for (const page of ["favorites", "downloads"]) {
+    const small = document.createElement("small");
+    small.className = "m-n";
+    $(`#nav a[data-page="${page}"]`).appendChild(small);
+    navCount[page] = small;
+  }
   setInterval(() => {
     const d = P.duration(), t = P.current;
+    if (S.lib) {
+      navCount.favorites.textContent = `${L.favTracks().length} şarkı`;
+      navCount.downloads.textContent = `${L.dlTracks().length} şarkı`;
+    }
     line.style.width = d ? Math.min(100, P.position() / d * 100) + "%" : "0";
     root.classList.toggle("m-idle", !t);
     if (t && t.id !== tintFor) {
       tintFor = t.id;
       coverColor(thumb(t)).then(c => { if (c && tintFor === t.id) root.style.setProperty("--m-tint", c); });
+      meshFrom(thumb(t));
     }
   }, 500);
 
@@ -175,22 +218,51 @@
     setTimeout(() => {
       panel.classList.remove("m-anim"); bar.classList.remove("m-anim");
       realToggle(false);
+      centerHome();
       moveFull(0);
       closing = false;
     }, 210);
   };
+  /* indirme: yazısız tek ikon, kalbin yanında. Kapak kipinde ses, video kipinde video indirir */
+  const VIDEO_DL = stroke('<rect x="2" y="5" width="15" height="14" rx="3"/><path d="m17 10 5-3v10l-5-3"/><path d="M9.5 8.5v6.2m-2.6-2.6 2.6 2.6 2.6-2.6"/>', 1.9);
+  const realParts = renderPanelParts;
+  renderPanelParts = () => {
+    realParts();
+    const t = P.current, row = $("#pTitle .p-title");
+    if (!t || !row) return;
+    const kind = S.panelMode === "video" ? "video" : "audio", [state, icon] = dlIcon(t.id, kind);
+    const button = document.createElement("button");
+    button.className = `rb m-dl ${state}`;
+    button.dataset.act = "panelDl";
+    button.dataset.kind = kind;
+    button.title = `${kind === "video" ? "Video" : "Ses"} ${state === "done" ? "indirildi" : state === "busy" ? "indiriliyor, iptal için dokun" : "indir"}`;
+    button.innerHTML = kind === "video" && state !== "busy" ? VIDEO_DL : icon;
+    row.insertBefore(button, $(".heart", row));
+  };
+
+  /* Alev ve düğmeler tam ekranda sayfanın içine taşınır: ilk ekran çaların kendisi, sözler ve bilgiler kaydırınca altta.
+     Her yeniden çizimden önce çubuğa geri alınır, yoksa panelin içeriğiyle birlikte silinirdi. */
+  const center = $("#bar .center");
+  const centerHome = () => { if (center.parentElement !== bar) bar.insertBefore(center, $("#bar .right")); };
   const realRender = renderPanel;
   renderPanel = () => {
+    centerHome();
     realRender();
-    const close = $('#panelInner [data-act="closePanel"]');
-    if (close) close.innerHTML = stroke('<path d="m6 9 6 6 6-6"/>', 2.4);
+    const inner = $("#panelInner"), media = $("#pMedia");
+    if (!media) return;
+    $('[data-act="closePanel"]', inner).innerHTML = stroke('<path d="m6 9 6 6 6-6"/>', 2.4);
+    const now = document.createElement("div");
+    now.id = "mNow";
+    inner.insertBefore(now, inner.firstChild);
+    now.append($(".p-head", inner), media, $("#pTitle"), center);
   };
 
   let touch = null;
   const begin = e => {
     if (e.touches.length !== 1 || e.target.closest("#flame, input")) { touch = null; return; }
     const inner = $("#panelInner");
-    touch = { x: e.touches[0].clientX, y: e.touches[0].clientY, mode: null, full: S.panelOpen, atTop: !inner || inner.scrollTop <= 0 };
+    touch = { x: e.touches[0].clientX, y: e.touches[0].clientY, mode: null, full: S.panelOpen, atTop: !inner || inner.scrollTop <= 0,
+      cover: S.panelOpen ? e.target.closest("#pMedia") : null };
   };
   const move = e => {
     if (!touch) return;
@@ -198,18 +270,19 @@
     if (!touch.mode) {
       if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
       const sideways = Math.abs(dx) > Math.abs(dy);
-      if (touch.full) touch.mode = !sideways && dy > 0 && touch.atTop ? "close" : "none";
+      if (touch.full) touch.mode = sideways && touch.cover && P.current ? "cover" : !sideways && dy > 0 && touch.atTop ? "close" : "none";
       else touch.mode = sideways && P.current ? "swipe" : !sideways && dy < 0 && P.current ? "open" : "none";
     }
     if (touch.mode === "none") return;
     e.preventDefault();
     if (touch.mode === "close") moveFull(Math.max(0, dy));
     else if (touch.mode === "swipe") { np.style.transform = `translateX(${dx}px)`; np.style.opacity = Math.max(.35, 1 - Math.abs(dx) / 260); }
+    else if (touch.mode === "cover") { touch.cover.style.transform = `translateX(${dx}px)`; touch.cover.style.opacity = Math.max(.35, 1 - Math.abs(dx) / 320); }
     touch.dx = dx; touch.dy = dy;
   };
   const end = () => {
     if (!touch) return;
-    const { mode, dx = 0, dy = 0 } = touch;
+    const { mode, dx = 0, dy = 0, cover } = touch;
     touch = null;
     if (mode && mode !== "none") suppressClick = true;
     setTimeout(() => { suppressClick = false; }, 350);
@@ -220,6 +293,12 @@
       setTimeout(() => { panel.classList.remove("m-anim"); bar.classList.remove("m-anim"); }, 210);
     } else if (mode === "open") {
       if (dy < -40) togglePanel(true);
+    } else if (mode === "cover") {
+      cover.classList.add("m-anim");
+      cover.style.transform = ""; cover.style.opacity = "";
+      setTimeout(() => cover.classList.remove("m-anim"), 210);
+      if (dx > THRESHOLD) P.next();
+      else if (dx < -THRESHOLD) previousSong();
     } else if (mode === "swipe") {
       np.classList.add("m-anim");
       np.style.transform = ""; np.style.opacity = "";
@@ -236,7 +315,10 @@
     el.addEventListener("touchstart", begin, { passive: true });
     el.addEventListener("touchmove", move, { passive: false });
     el.addEventListener("touchend", end);
-    el.addEventListener("touchcancel", () => { touch = null; moveFull(0); np.style.transform = ""; np.style.opacity = ""; });
+    el.addEventListener("touchcancel", () => {
+      if (touch && touch.cover) { touch.cover.style.transform = ""; touch.cover.style.opacity = ""; }
+      touch = null; moveFull(0); np.style.transform = ""; np.style.opacity = "";
+    });
   }
 
   /* ses telefonun kendi tuşlarıyla ayarlanır: uygulama içi kaydırıcı tam açık kalır */

@@ -1,12 +1,12 @@
 {
-  "versionCode": 6,
-  "versionName": "0.1.5",
-  "sha256": "737ef2da6a558ca222571c1895f42172e7fe305b58fde84fa108e5b3a559d118",
-  "url": "https://github.com/Sefikak/SOUND/raw/android-0.1.5/SOUND-android-0.1.5.apk",
+  "versionCode": 7,
+  "versionName": "0.1.6",
+  "sha256": "d7cc9eedf4c561294eb5268f28c2ae1ed2294d007eaa67fba0506c1300b4e192",
+  "url": "https://github.com/Sefikak/SOUND/raw/android-0.1.6/SOUND-android-0.1.6.apk",
   "notes": [
-    "Yeni görünüm: küçük kartlar, radyolar ve liste önerileri",
-    "Küçük çalar: sağa kaydır sonraki, sola kaydır önceki, kalp düğmesi",
-    "Tam ekran çalar aşağı kaydırınca küçülür",
-    "Sekmeler: Ana sayfa, Ara, Kitaplık, Ayarlar"
+    "Yeni görünüm: açık tonlu arka plan, zeminli kartlar, kartlarda kalp ve başlat",
+    "Kitaplık: favoriler, indirilenler ve albümler kart oldu",
+    "Tam ekran yenilendi: kapağı kaydırarak şarkı değiştir, sözler alevin altında",
+    "Video indirme eklendi; indirme kalbin yanında tek ikon"
   ]
 }

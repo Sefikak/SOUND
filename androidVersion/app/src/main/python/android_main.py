@@ -44,7 +44,7 @@ def _use_data_dir(data_dir):
 
 def _patch_downloads():
     """Masaüstü indirilen sesi ffmpeg ile .opus dosyasına aktarır; Android'de ffmpeg yok. YouTube'un sesi zaten
-    Opus/WebM olduğu için dönüştürmeden olduğu gibi saklanır. Birleştirme gerektiren video indirme henüz yok."""
+    Opus/WebM olduğu için dönüştürmeden olduğu gibi saklanır."""
     import shutil
     import downloader
     from library import MUSIC_DIR
@@ -75,7 +75,24 @@ def _patch_downloads():
         return found
 
     def fetch_video(track, progress=None, cancelled=None):
-        raise RuntimeError("Video indirme mobil sürümde henüz yok")
+        """ffmpeg olmadığından birleştirme yok: görüntü sessiz dosya olarak iner, ses normal indirmeyle ayrı gelir.
+        Tam ekran görüntüyü zaten sesiz oynatıp sesle eşleştiriyor, sonuç çevrimdışı da aynı. En çok 720p: yer kaplamasın."""
+        from library import VIDEO_DIR
+        stem = f"{downloader.safe_name(track['title'])} [{track['id']}]"
+        target = os.path.join(VIDEO_DIR, stem + ".mp4")
+        if not os.path.exists(target):
+            options = {"quiet": True, "no_warnings": True, "noprogress": True, "noplaylist": True,
+                       "format": "bestvideo[ext=mp4][vcodec^=avc1][height<=720]/bestvideo[ext=mp4][height<=720]/best[ext=mp4]",
+                       "outtmpl": os.path.join(VIDEO_DIR.replace("%", "%%"), stem + ".%(ext)s")}
+            options.update(downloader._hooks(progress, cancelled))
+            downloader._run_ytdl(track, options)
+            if not os.path.exists(target):
+                raise RuntimeError("Video dosyası oluşturulamadı")
+        if progress:
+            progress(1.0)
+        if _backend and not _backend.lib.is_downloaded(track["id"]):
+            _backend.download(track, "audio")  # çevrimdışı izlerken ses de olsun
+        return stem + ".mp4"
 
     downloader.fetch_for_library = fetch_for_library
     downloader.fetch_video = fetch_video

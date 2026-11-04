@@ -74,7 +74,30 @@ def youtube_music(progress):
         except Exception:
             continue
         playlists.append((f"ytm:{p['playlistId']}", p.get("title") or "YouTube Music listesi", tracks))
-    return liked, playlists
+    return liked, playlists + _ytm_albums(ytm, progress)
+
+
+def _ytm_albums(ytm, progress):
+    """Hesabın kitaplığına kaydettiği albümler. Okunamayan albüm aktarmanın geri kalanını bozmasın."""
+    progress("YouTube Music: albümler okunuyor…")
+    try:
+        saved = ytm.get_library_albums(limit=None)
+    except Exception:
+        return []
+    albums = []
+    for i, album in enumerate(saved, 1):
+        title = album.get("title") or "YouTube Music albümü"
+        progress(f"YouTube Music: “{title}” albümü okunuyor ({i}/{len(saved)})…", i, len(saved))
+        try:
+            data = ytm.get_album(album["browseId"])
+        except Exception:
+            continue
+        cover = data.get("thumbnails") or album.get("thumbnails")
+        # albüm şarkılarında kapak ve çoğu zaman sanatçı olmaz: albümünkü kullanılır
+        tracks = _songs([{**t, "thumbnails": t.get("thumbnails") or cover, "artists": t.get("artists") or data.get("artists")}
+                         for t in data.get("tracks") or []])
+        albums.append((f"ytm:{album['browseId']}", title, tracks))
+    return albums
 
 
 # ---------- Spotify ----------

@@ -266,5 +266,23 @@ def same_song(video, song):
     return any(_norm(t) == title for _, t in candidates(video))
 
 
+def same_recording(candidate, original):
+    """Yedek yükleme asıl şarkının yerine geçer mi? Klip adı ("A - B (Official Video)") ile şarkı adı ("B")
+    karşılaştırılabilir; canlı, cover, remix gibi farklı kayıtlar, asılları da öyle değilse geçmez."""
+    from lyricsfinder import candidates
+    if bool(VERSION.search(candidate["title"])) != bool(VERSION.search(original["title"])):
+        return False
+
+    def names(track):
+        return {_norm(track["title"])} | {_norm(title) for _, title in candidates(track)}
+
+    if not (names(candidate) & names(original)) - {""}:
+        return False
+    haystack = _norm(f"{candidate['title']} {candidate.get('artist', '')}")
+    artist = _norm((original.get("artist") or "").split(",")[0])
+    from_title = [_norm(a) for a, _ in candidates(original)]  # kanal adı sanatçı olmayabilir: başlıktan çıkan da sayılır
+    return any(a and a in haystack for a in [artist, *from_title])
+
+
 def remove_duplicates(videos, songs):
     return [v for v in videos if not any(same_song(v, s) for s in songs)]

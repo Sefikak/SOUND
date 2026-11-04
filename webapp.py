@@ -848,7 +848,8 @@ class Backend:
 
     YTM_LOGIN = "https://accounts.google.com/ServiceLogin?service=youtube&hl=tr&continue=https%3A%2F%2Fmusic.youtube.com%2F"
 
-    def login_import(self, service, client_id=None):
+    def login_import(self, service, client_id=None, start_import=True):
+        """start_import=False: yalnızca hesap bağlanır (yaş doğrulaması için), bitince "account" olayı gelir."""
         if self.importing:
             return {"error": "Bir aktarma zaten sürüyor."}
         if self.login_window:
@@ -873,7 +874,7 @@ class Backend:
             threading.Thread(target=self._spotify_login_watch, args=(window, closed, server, client_id, verifier),
                              daemon=True).start()
         else:
-            threading.Thread(target=self._ytm_login_watch, args=(window, closed), daemon=True).start()
+            threading.Thread(target=self._ytm_login_watch, args=(window, closed, start_import), daemon=True).start()
         return {"ok": True}
 
     def _close_login(self, window):
@@ -895,7 +896,7 @@ class Backend:
                                   True, bool(m["secure"]), expires, False, None, None, {}))
         return out
 
-    def _ytm_login_watch(self, window, closed):
+    def _ytm_login_watch(self, window, closed, start_import=True):
         """Kullanıcı music.youtube.com'a girişli olarak ulaşınca çerezleri kaydet ve aktarmayı başlat."""
         from http.cookiejar import MozillaCookieJar
         deadline = time.time() + 1200
@@ -918,7 +919,10 @@ class Backend:
             self.save_auth({"mode": "file", "file": downloader.COOKIE_FILE, "login": True})
             self._close_login(window)
             self.toast("YouTube Music hesabına giriş yapıldı")
-            self.start_import("ytmusic")
+            if start_import:
+                self.start_import("ytmusic")
+            else:
+                self.push("account", True)
             return
         self._close_login(window)
         if not closed.is_set():
@@ -1201,8 +1205,8 @@ class Api:
     def start_import(self, source, links="", files=None):
         return self._b.start_import(source, links, files)
 
-    def login_import(self, service, client_id=None):
-        return self._b.login_import(service, client_id)
+    def login_import(self, service, client_id=None, start_import=True):
+        return self._b.login_import(service, client_id, start_import)
 
     def pick_import_files(self):
         paths = self._b.window.create_file_dialog(

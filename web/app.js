@@ -207,13 +207,16 @@ function confirmBox(title, text, yes = "Sil") {
 
 /* ---------- YouTube hesabı ---------- */
 let accountOpen = false;
+let accountDone = null;  /* Google girişi ayrı pencerede bitince çalışır */
 async function openAccount(reason = null, onConnected = null) {
   if (accountOpen) return;
   accountOpen = true;
   const status = await api.auth_status();
   await modal(`<h3>YouTube hesabını bağla</h3>${reason ? `<p class="reason">${esc(reason)}</p>` : ""}
-    <p>Yaş doğrulaması isteyen şarkılar için YouTube'a giriş yaptığın tarayıcıyı seç. Hesabının yaşı YouTube'da doğrulanmış olmalı.
+    <p>SOUND önce aynı şarkının kısıtsız bir yüklemesini arar; bulamazsa hesabın gerekir. Hesabının yaşı YouTube'da doğrulanmış olmalı.
     Oturum bilgileri bu bilgisayarda kalır ve yalnızca YouTube'a gönderilir.</p>
+    <button class="pill fill" data-x="google">Google hesabınla giriş yap</button>
+    <small style="margin-top:10px">Ya da YouTube'a giriş yaptığın tarayıcıyı seç:</small>
     <div class="browsers">${S.browsers.map(([k, n]) => `<button class="pill" data-b="${k}">${esc(n)}</button>`).join("")}</div>
     <button class="pill" data-x="file">cookies.txt dosyası seç…</button>
     <small style="margin-top:6px">cookies.txt: tarayıcına “Get cookies.txt LOCALLY” eklentisini kur, youtube.com'da giriş yapmışken dışa aktar ve buradan seç.</small>
@@ -235,6 +238,12 @@ async function openAccount(reason = null, onConnected = null) {
         show(`${name} kontrol ediliyor…`);
         finish(await api.auth_browser(b.dataset.b), name);
       });
+      $('[data-x="google"]', box).onclick = async () => {
+        const res = await api.login_import("ytmusic", null, false);
+        if (res.error) return show(res.error, "err");
+        accountDone = onConnected;
+        done(null);
+      };
       $('[data-x="file"]', box).onclick = async () => finish(await api.auth_file(), "cookies.txt");
       $('[data-x="clear"]', box).onclick = async () => show(await api.auth_clear());
       $('[data-x="close"]', box).onclick = () => done(null);
@@ -271,7 +280,7 @@ async function openSettings() {
           <select data-select="cache_mb">${[500, 1000, 1500, 3000, 5000, 10000].map(v => `<option value="${v}" ${+s.cache_mb === v ? "selected" : ""}>${mb(v)}</option>`).join("")}</select></div>
         <div class="set-row"><div></div><button class="textbtn" data-x="clearCache">Önbelleği temizle</button></div>
         <div class="set-sec">İçe aktar</div>
-        <div class="set-row"><div><b>YouTube Music</b><p>Hesabına giriş yap; kayıtlı listelerin albüm, beğendiğin şarkılar favori olarak eklenir. Zaten olanlar atlanır.</p></div><button class="pill" data-x="loginYtm">Giriş yap ve aktar</button></div>
+        <div class="set-row"><div><b>YouTube Music</b><p>Hesabına giriş yap; beğendiğin şarkılar favori, kayıtlı albümlerin ve listelerin albüm olarak eklenir. Zaten olanlar atlanır.</p></div><button class="pill" data-x="loginYtm">Giriş yap ve aktar</button></div>
         <div class="set-row"><div><b>Spotify hesabı (Premium)</b><p>Hesabına giriş yap; beğendiğin şarkılar ve listelerin doğrudan aktarılır. İlk seferde bir kerelik kurulum ister.</p></div><button class="pill" data-x="loginSpotify">Giriş yap ve aktar</button></div>
         <div class="set-row"><div><b>Spotify bağlantı ya da dosya</b><p>Premium gerekmez: liste bağlantıları ya da hesap verisi dosyanla aktarılır.</p></div><button class="pill" data-x="importSpotify">Aktar</button></div>
         <div class="set-sec">Güncelleme</div>
@@ -1254,7 +1263,7 @@ const P = {
       if (res.error) return this.failed(res, track);
       this.streams[track.id] = res;
       this.local = !!res.cached;
-      if (res.alt) toast("Orijinal video engelli; aynı şarkının başka bir yüklemesi çalınıyor");
+      if (res.alt) toast("Orijinal video kısıtlı; aynı şarkının başka bir yüklemesi çalınıyor");
       this.load(res.audio, start);
       playerChanged();
       return;
@@ -1274,9 +1283,9 @@ const P = {
   failed(res, track) {
     this.loading = false;
     if (res.age) {
-      toast("Bu şarkı yaş doğrulaması istiyor", true);
+      toast("Bu şarkının kısıtsız bir yüklemesi bulunamadı", true);
       playerChanged();
-      openAccount(`“${short(track.title, 50)}” için YouTube yaş doğrulaması istiyor.`, () => this.current && this.current.id === track.id && this.playCurrent());
+      openAccount(`“${short(track.title, 50)}” için YouTube yaş doğrulaması istiyor, kısıtsız bir yüklemesi de bulunamadı.`, () => this.current && this.current.id === track.id && this.playCurrent());
       return;
     }
     if (res.unavailable && this.pos + 1 < this.order.length) {
@@ -2558,6 +2567,7 @@ window.SOUND = {
       case "import": importProgress(d); break;
 
       case "home": S.home = d; if (S.page.kind === "home") renderPage(true); break;
+      case "account": { const next = accountDone; accountDone = null; next?.(); break; }
       case "age": openAccount(`“${short(d.title, 50)}” için YouTube yaş doğrulaması istiyor.`, () => api.retry_download(d.key)); break;
       case "command":
         ({ toggle: () => P.toggle(), play: () => !P.isPlaying() && P.toggle(), pause: () => P.isPlaying() && P.toggle(),

@@ -17,7 +17,7 @@ Kaldırmak için: **Ayarlar → Uygulamalar → SOUND → Kaldır** (kitaplığ�
 
 ## Mobil sürüm (Android)
 
-### [⬇ SOUND-android-0.1.3.apk'yı indir](https://github.com/Sefikak/SOUND/raw/android-0.1.3/SOUND-android-0.1.3.apk)
+### [⬇ SOUND-android-0.1.4.apk'yı indir](https://github.com/Sefikak/SOUND/raw/android-0.1.4/SOUND-android-0.1.4.apk)
 
 **Erken deneme sürümü:** Sorun çıkabilir. 32 ve 64 bit telefonlarda kurulabilir.
 

@@ -1,4 +1,4 @@
-"""yt-dlp'yi haftada bir arka planda günceller.
+"""yt-dlp'yi günde bir arka planda günceller.
 
 YouTube sık sık değişiyor; yt-dlp güncel tutulmazsa arama ve indirme bir gün aniden bozulur.
 Yeni sürüm, çalışan uygulamaya değil bir sonraki açılışa yansır.
@@ -13,7 +13,7 @@ from library import DATA_DIR
 
 STATE_FILE = os.path.join(DATA_DIR, "update.json")
 PACKAGES = ["yt-dlp", "yt-dlp-ejs"]
-EVERY = 7 * 24 * 3600
+EVERY = 24 * 3600
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 

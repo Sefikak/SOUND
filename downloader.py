@@ -139,21 +139,54 @@ def _download_with_auth_fallback(url, options):
             raise
 
 
-def _alternative_url(track):
-    """Engelli/silinmiş bir videonun yerine aynı şarkının başka bir yüklemesi.
-    Süresi orijinale yakın olmalı ki yanlış şarkı inmesin."""
+def _alternative_urls(track):
+    """Engelli ya da yaş doğrulaması isteyen bir videonun yerine aynı şarkının başka yüklemeleri, en olası önce.
+    YouTube Music'teki resmi ses kayıtları genelde kısıtsızdır, klipler kısıtlanır; bu yüzden önce oraya bakılır.
+    Süresi ve adı tutmalı ki yanlış şarkı, cover ya da remix çalınmasın."""
+    from searcher import same_recording, search_songs
     query = f'{track.get("artist") or ""} {track["title"]}'.strip()
+    wanted = track.get("duration") or 0
+    seen = {track["id"]}
+
+    def fits(item):
+        duration = item.get("duration") or 0
+        if item["id"] in seen or len(item["id"]) != 11 or (wanted and abs(duration - wanted) > max(20, wanted * 0.1)):
+            return False
+        seen.add(item["id"])
+        return same_recording(item, track)
+
+    try:
+        songs = search_songs(query, 6)
+    except Exception:
+        songs = []  # YouTube Music'e ulaşılamadı: YouTube aramasıyla devam
+    for song in songs:
+        if fits(song):
+            yield song["url"]
     with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "extract_flat": True}) as ydl:
         entries = ydl.extract_info(f"ytsearch6:{query}", download=False).get("entries") or []
-    wanted = track.get("duration") or 0
     for entry in entries:
-        if not entry or entry.get("id") == track["id"] or len(entry.get("id") or "") != 11:
-            continue
-        duration = entry.get("duration") or 0
-        if wanted and (not duration or abs(duration - wanted) > max(20, wanted * 0.1)):
-            continue
-        return f"https://www.youtube.com/watch?v={entry['id']}"
-    return None
+        if entry and entry.get("id") and fits({"id": entry["id"], "title": entry.get("title") or "",
+                                               "artist": entry.get("channel") or entry.get("uploader") or "",
+                                               "duration": entry.get("duration")}):
+            yield f"https://www.youtube.com/watch?v={entry['id']}"
+
+
+def _try_alternatives(track, attempt, error):
+    """Sırayla başka yüklemeleri dener; kısıtlı ya da bozuk olanı atlar. attempt(adres) -> sonuç.
+    Hiçbiri olmazsa kullanıcıya asıl hata gösterilsin diye o yükseltilir."""
+    try:
+        for url in _alternative_urls(track):
+            try:
+                return url, attempt(url)
+            except yt_dlp.utils.DownloadCancelled:
+                raise
+            except Exception:
+                continue
+    except yt_dlp.utils.DownloadCancelled:
+        raise
+    except Exception:
+        pass
+    raise error
 
 
 # YouTube'un "visionos" istemcisi adresleri ~1,5 sn'de veriyor ve hemen açıyor. Varsayılan istemciler
@@ -186,13 +219,9 @@ def _run_ytdl(track, options):
     try:
         _download_with_auth_fallback(track["url"], options)
     except Exception as error:
-        if not is_unavailable_error(error) or is_age_error(error):
+        if not (is_unavailable_error(error) or is_age_error(error) or track["url"] in _age_restricted):
             raise
-        alternative = _alternative_url(track)
-        if not alternative:
-            raise
-        _download_with_auth_fallback(alternative, options)
-        track["alt_source"] = alternative
+        track["alt_source"], _ = _try_alternatives(track, lambda url: _download_with_auth_fallback(url, options), error)
 
 
 _age_restricted = set()  # yaş doğrulaması istediği görülen adresler: bir dahaki sefere doğrudan oturumla dene
@@ -247,12 +276,10 @@ def resolve_stream(track):
     try:
         info = _extract_with_auth_fallback(track["url"], options)
     except Exception as error:
-        if not is_unavailable_error(error) or is_age_error(error):
+        # Yaş doğrulaması: hesap bağlı değilse ya da işe yaramadıysa aynı şarkının kısıtsız bir yüklemesi aranır
+        if not (is_unavailable_error(error) or is_age_error(error) or track["url"] in _age_restricted):
             raise
-        alternative = _alternative_url(track)
-        if not alternative:
-            raise
-        info = _extract_with_auth_fallback(alternative, options)
+        alternative, info = _try_alternatives(track, lambda url: _extract_with_auth_fallback(url, options), error)
     audio = info.get("url")
     if not audio:
         raise RuntimeError("Ses akışı bulunamadı")

@@ -1,12 +1,12 @@
 {
-  "versionCode": 7,
-  "versionName": "0.1.6",
-  "sha256": "d7cc9eedf4c561294eb5268f28c2ae1ed2294d007eaa67fba0506c1300b4e192",
-  "url": "https://github.com/Sefikak/SOUND/raw/android-0.1.6/SOUND-android-0.1.6.apk",
+  "versionCode": 8,
+  "versionName": "0.1.7",
+  "sha256": "bd8011405daf1e25dec16ac1c7e62b4330841a12a0b2d2b19dc3e4cea64c67e8",
+  "url": "https://github.com/Sefikak/SOUND/raw/android-0.1.7/SOUND-android-0.1.7.apk",
   "notes": [
-    "Yeni görünüm: açık tonlu arka plan, zeminli kartlar, kartlarda kalp ve başlat",
-    "Kitaplık: favoriler, indirilenler ve albümler kart oldu",
-    "Tam ekran yenilendi: kapağı kaydırarak şarkı değiştir, sözler alevin altında",
-    "Video indirme eklendi; indirme kalbin yanında tek ikon"
+    "SOUND hesabı: e-postayla giriş yap, favori ve albümlerin bilgisayarla eşitlensin",
+    "Kapaklar artık daha güvenilir yükleniyor",
+    "Ana sayfa aşağıdayken yenilenmiyor; yeni öneriler için düğme çıkıyor",
+    "Albüm ve liste etiketleri düzeltildi"
   ]
 }

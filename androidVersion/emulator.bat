@@ -5,6 +5,7 @@ set "SDK=%LOCALAPPDATA%\Android\Sdk"
 set "ANDROID_AVD_HOME=%LOCALAPPDATA%\SOUNDtools\avd"
 start "" "%SDK%\emulator\emulator.exe" -avd sound -no-snapshot-save
 "%SDK%\platform-tools\adb.exe" wait-for-device
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0fitwindow.ps1"
 :bekle
 for /f %%b in ('"%SDK%\platform-tools\adb.exe" shell getprop sys.boot_completed') do if "%%b"=="1" goto hazir
 timeout /t 2 /nobreak >nul

@@ -619,3 +619,7 @@ body.tint-logo .brand .logo-tint { display: block; }
 .st-note { color: var(--muted); font-size: 12.5px; margin: 10px 0 0; }
 #statTip { position: fixed; z-index: 95; padding: 5px 9px; border-radius: 6px; background: #000; color: #fff; font-size: 12.5px; font-weight: 600; pointer-events: none; box-shadow: 0 6px 18px #000a; white-space: nowrap; }
 .row .dur { white-space: nowrap; }
+
+/* ana sayfa: kullanıcı aşağıdayken gelen yeni öneriler */
+#homeFresh { position: sticky; top: var(--fresh-top, 84px); height: 0; z-index: 20; display: flex; justify-content: center; pointer-events: none; }
+#homeFresh .pill { pointer-events: auto; box-shadow: 0 6px 20px rgba(0,0,0,.45); animation: enter .22s var(--ease); }

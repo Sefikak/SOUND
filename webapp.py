@@ -22,6 +22,7 @@ os.environ.setdefault("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
 
 import webview
 
+import cloud
 import downloader
 import lyricsfinder
 import mediakeys
@@ -126,6 +127,8 @@ class Backend:
         self.session = self._load_session()
         self.geometry = dict(self.session.get("window") or {})
         self.lib.subscribe(lambda: self.push("library", self.snapshot()))
+        self.cloud = cloud.Cloud(self.lib, lambda status: self.push("cloud", status))
+        self.cloud_login = None  # Google girişinin dönüşünü bekleyen yerel sunucu
         threading.Thread(target=self._event_loop, daemon=True).start()
 
     # ---------- arayüze bildirim ----------
@@ -316,6 +319,8 @@ class Backend:
         threading.Thread(target=self._trim_cache, daemon=True).start()
         threading.Timer(20, self._check_updates).start()
         threading.Thread(target=self._self_update_loop, daemon=True).start()
+        self.cloud.start()
+        self.cloud.sync_now()
         self.ensure_home()
 
     def _trim_cache(self):
@@ -980,6 +985,74 @@ class Backend:
         self.lib.update_settings({"spotify_client_id": client_id})
         self.start_import("spotify", token=token)
 
+    # ---------- SOUND hesabı (cloud.py) ----------
+
+    def cloud_call(self, job, *args):
+        try:
+            return job(*args) or {"ok": True}
+        except cloud.CloudError as error:
+            return {"error": str(error)}
+
+    def cloud_google(self):
+        """Google ile giriş sistem tarayıcısında olur (Google gömülü pencereleri reddedebiliyor);
+        dönüş 127.0.0.1'deki küçük sunucuya gelir."""
+        if not self.cloud.configured:
+            return {"error": "SOUND hesabı henüz yapılandırılmadı."}
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+        from urllib.parse import parse_qs, urlparse
+        if self.cloud_login:
+            self.cloud_login.shutdown()
+            self.cloud_login.server_close()
+            self.cloud_login = None
+        try:
+            url, verifier = self.cloud.google_url()
+        except cloud.CloudError as error:
+            return {"error": str(error)}
+        backend = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                parsed = urlparse(self.path)
+                if parsed.path != "/auth/callback":
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                query = {k: v[0] for k, v in parse_qs(parsed.query).items()}
+                if "code" in query:
+                    result = backend.cloud_call(backend.cloud.finish_google, query["code"], verifier)
+                else:
+                    result = {"error": query.get("error_description") or "Giriş iptal edildi."}
+                ok = "error" not in result
+                body = ("<meta charset='utf-8'><body style='font-family:sans-serif;background:#121212;color:#eee;"
+                        "display:grid;place-items:center;height:90vh'><h2>" +
+                        ("Giriş tamam, SOUND'a dönebilirsin." if ok else "Giriş yapılamadı: " + result["error"]) +
+                        "</h2></body>").encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(body)
+                backend.push("cloud_login", result)
+                threading.Thread(target=backend._close_cloud_login, args=(self.server,), daemon=True).start()
+
+            def log_message(self, *args):
+                pass
+
+        try:
+            server = HTTPServer(("127.0.0.1", cloud.CALLBACK_PORT), Handler)
+        except OSError:
+            return {"error": f"{cloud.CALLBACK_PORT} numaralı kapı kullanımda; uygulamayı yeniden başlatıp tekrar dene."}
+        self.cloud_login = server
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        threading.Timer(600, self._close_cloud_login, args=(server,)).start()
+        webbrowser.open(url)
+        return {"ok": True}
+
+    def _close_cloud_login(self, server):
+        if self.cloud_login is server:
+            self.cloud_login = None
+            server.shutdown()
+            server.server_close()
+
     # ---------- YouTube hesabı ----------
 
     def auth_status(self):
@@ -1261,6 +1334,32 @@ class Api:
     def auth_clear(self):
         self._b.save_auth(None)
         return self._b.auth_status()
+
+    # SOUND hesabı
+    def cloud_status(self):
+        return self._b.cloud.status()
+
+    def cloud_sign_up(self, email, password):
+        return self._b.cloud_call(self._b.cloud.sign_up, email, password)
+
+    def cloud_sign_in(self, email, password):
+        return self._b.cloud_call(self._b.cloud.sign_in, email, password)
+
+    def cloud_reset_password(self, email):
+        return self._b.cloud_call(self._b.cloud.reset_password, email)
+
+    def cloud_google(self):
+        return self._b.cloud_google()
+
+    def cloud_sync(self):
+        self._b.cloud.sync_now()
+        return self._b.cloud.status()
+
+    def cloud_sign_out(self):
+        return self._b.cloud_call(self._b.cloud.sign_out)
+
+    def cloud_delete_account(self):
+        return self._b.cloud_call(self._b.cloud.delete_account)
 
 
 def run():

@@ -543,6 +543,65 @@ class Library:
         self._notify()
         return snap["label"]
 
+    # ---------- hesap eşitlemesi (cloud.py) ----------
+
+    def apply_cloud(self, fav_add, fav_del, order, albums, folders, merge=False):
+        """Başka bir cihazdan gelen değişiklikler. albums/folders: kimlik → değer (None: silindi).
+        merge=True (hesaba ilk bağlanış): yerelde olanlar korunur, albümlerin şarkıları birleştirilir."""
+        with self._lock:
+            data, favorites = self.data, self.data["favorites"]
+            with self._tx():
+                for track in fav_add:
+                    self.remember(track)
+                    if track["id"] not in favorites:
+                        favorites.insert(0, track["id"])
+                for track_id in fav_del:
+                    if track_id in favorites:
+                        favorites.remove(track_id)
+                if order is not None and not merge:
+                    members = set(favorites)
+                    ranked = [i for i in order if i in members]
+                    seen = set(ranked)
+                    favorites[:] = [i for i in favorites if i not in seen] + ranked
+                self._write_list("favorites", favorites)
+                for folder_id, folder in folders.items():
+                    if folder is None:
+                        data["folders"].pop(folder_id, None)
+                        self.db.execute("DELETE FROM folders WHERE id=?", (folder_id,))
+                    elif not (merge and folder_id in data["folders"]):
+                        data["folders"][folder_id] = {"name": folder.get("name") or "Klasör",
+                                                      "created": folder.get("created") or time.time()}
+                        self.db.execute("INSERT OR REPLACE INTO folders VALUES (?,?,?)",
+                                        (folder_id, data["folders"][folder_id]["name"], data["folders"][folder_id]["created"]))
+                for album_id, album in albums.items():
+                    if album is None:
+                        data["albums"].pop(album_id, None)
+                        self.db.execute("DELETE FROM albums WHERE id=?", (album_id,))
+                        self.db.execute("DELETE FROM album_tracks WHERE album_id=?", (album_id,))
+                        continue
+                    meta = album.get("meta") or {}
+                    ids = [i for i in album.get("tracks") or [] if i in meta or i in data["tracks"]]
+                    for track_id in ids:
+                        if track_id in meta:
+                            self.remember(meta[track_id])
+                    local = data["albums"].get(album_id)
+                    if merge and local:
+                        ids = local["tracks"] + [i for i in ids if i not in local["tracks"]]
+                    folder = album.get("folder")
+                    if folder and folder not in data["folders"]:
+                        folder = None
+                    data["albums"][album_id] = {"name": album.get("name") or "Albüm", "folder": folder,
+                                                "created": album.get("created") or time.time(),
+                                                "source": album.get("source"), "tracks": ids}
+                    self._save_album(album_id)
+                    self._write_album_tracks(album_id, ids)
+                for album_id, album in data["albums"].items():  # silinen klasörün albümleri köke
+                    if album.get("folder") and album["folder"] not in data["folders"]:
+                        album["folder"] = None
+                        self._save_album(album_id)
+                self._prune()
+        self._notify()
+
     # ---------- içe aktarma (YouTube Music / Spotify) ----------
 
     @staticmethod

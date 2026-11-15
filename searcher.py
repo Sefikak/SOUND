@@ -161,7 +161,7 @@ def search_albums(query, limit=10):
         if not r.get("playlistId"):
             continue
         artists = ", ".join(a["name"] for a in r.get("artists") or [] if a.get("name"))
-        albums.append({"id": r["playlistId"], "kind": "playlist", "title": r.get("title") or "Albüm",
+        albums.append({"id": r["playlistId"], "kind": "playlist", "label": "Albüm", "title": r.get("title") or "Albüm",
                        "artist": artists or r.get("type") or "Albüm", "thumbnail": _art(r.get("thumbnails")),
                        "url": f"https://www.youtube.com/playlist?list={r['playlistId']}"})
     return albums

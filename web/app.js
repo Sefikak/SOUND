@@ -69,15 +69,17 @@ function videoId(item) {
   if (item.kind === "playlist") { const m = /\/vi\/([\w-]{11})\//.exec(item.thumbnail || ""); return m && m[1]; }
   return item.id;
 }
+// Google kapakları yerel sunucudan: doğrudan art arda istenince 429 veriyor, ayrıca çevrimdışı da görünsünler
+const art = url => /googleusercontent\.com|ggpht\.com/.test(url || "") ? `/art?src=${encodeURIComponent(url)}` : url;
 const squareArt = item => item && /googleusercontent\.com|ggpht\.com/.test(item.thumbnail || "");
 const thumb = item => {
   const v = item && item.kind !== "playlist" ? item.id : null;
   if (v) return `/thumb/${v}` + (squareArt(item) ? `?src=${encodeURIComponent(item.thumbnail)}` : "");
-  if (squareArt(item)) return item.thumbnail;  // YouTube Music albümü
+  if (squareArt(item)) return art(item.thumbnail);  // YouTube Music albümü
   const pv = videoId(item);
   return pv ? `/thumb/${pv}` : (item && item.thumbnail) || PH;
 };
-const bigThumb = item => squareArt(item) ? item.thumbnail.replace(/=w\d+-h\d+/, "=w800-h800") : `https://i.ytimg.com/vi/${videoId(item)}/hqdefault.jpg`;
+const bigThumb = item => squareArt(item) ? art(item.thumbnail.replace(/=w\d+-h\d+/, "=w800-h800")) : `https://i.ytimg.com/vi/${videoId(item)}/hqdefault.jpg`;
 document.addEventListener("error", e => {
   const img = e.target;
   if (img.tagName !== "IMG" || img.dataset.failed) return;
@@ -251,12 +253,107 @@ async function openAccount(reason = null, onConnected = null) {
   accountOpen = false;
 }
 
+/* ---------- SOUND hesabı: giriş ve eşitleme (cloud.py) ---------- */
+let cloudBox = null;
+function cloudLine(c) {
+  if (c.error) return c.error;
+  if (c.syncing) return "Eşitleniyor…";
+  if (!c.last_sync) return "Eşitleme bekleniyor";
+  const s = Math.round(Date.now() / 1000 - c.last_sync);
+  return "Eşitlendi · " + (s < 60 ? "az önce" : s < 3600 ? Math.round(s / 60) + " dk önce" : new Date(c.last_sync * 1000).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }));
+}
+function cloudChanged(status) {
+  S.cloud = status;
+  cloudBox?.draw();
+  settingsBox?.refresh?.();
+}
+async function openCloud() {
+  if (cloudBox) return;
+  S.cloud = await api.cloud_status();
+  let mode = "in", busy = false, msg = "", msgCls = "";
+  await modal(`<h3>SOUND hesabı</h3><div id="cloudBody"></div>`, (box, done) => {
+    const body = $("#cloudBody", box);
+    const draw = () => {
+      const c = S.cloud || {};
+      if (!c.configured) {
+        body.innerHTML = `<p>Hesap sunucusu henüz ayarlanmadı. Bu sürümde hesap açılamıyor.</p>
+          <div class="row-btns"><button class="pill fill" data-x="close">Kapat</button></div>`;
+      } else if (c.signed_in) {
+        body.innerHTML = `<p>Favorilerin, albümlerin ve klasörlerin bu hesapla giriş yaptığın her cihazda aynı kalır.
+          İndirilen dosyalar ve ayarlar her cihazda ayrıdır.</p>
+          <div class="set-row"><div><b>${esc(c.email || "Hesap")}</b><p>${esc(cloudLine(c))}</p></div><button class="pill" data-x="sync" ${c.syncing ? "disabled" : ""}>Şimdi eşitle</button></div>
+          <div class="status ${msgCls}">${esc(msg)}</div>
+          <div class="row-btns"><button class="textbtn" data-x="delete">Hesabımı sil</button><button class="textbtn" data-x="out">Çıkış yap</button><button class="pill fill" data-x="close">Kapat</button></div>`;
+      } else {
+        const up = mode === "up";
+        body.innerHTML = `<p>${up ? "Yeni hesap aç." : "Giriş yap."} Kitaplığın telefonla bilgisayar arasında eşitlenir; bu cihazdaki favori ve albümler hesaba eklenir, hiçbiri silinmez.</p>
+          <button class="pill fill" data-x="google" ${busy ? "disabled" : ""}>Google ile devam et</button>
+          <small style="margin:12px 0 6px">ya da e-postayla:</small>
+          <input class="text" type="email" placeholder="E-posta" autocomplete="email" data-f="email">
+          <input class="text" type="password" placeholder="Şifre${up ? " (en az 6 karakter)" : ""}" autocomplete="${up ? "new-password" : "current-password"}" data-f="pass" style="margin-top:8px">
+          <div class="status ${msgCls}">${esc(msg)}</div>
+          <div class="row-btns">
+            <button class="textbtn" data-x="mode">${up ? "Hesabım var, giriş yap" : "Yeni hesap aç"}</button>
+            ${up ? "" : `<button class="textbtn" data-x="forgot">Şifremi unuttum</button>`}
+            <button class="pill fill" data-x="submit" ${busy ? "disabled" : ""}>${up ? "Hesap aç" : "Giriş yap"}</button>
+          </div>`;
+        $('[data-f="pass"]', body).addEventListener("keydown", e => { if (e.key === "Enter") submit(); });
+      }
+    };
+    const say = (text, cls = "") => { msg = text; msgCls = cls; const st = $(".status", body); if (st) { st.textContent = text; st.className = "status " + cls; } };
+    const field = name => ($(`[data-f="${name}"]`, body)?.value || "").trim();
+    const submit = async () => {
+      const email = field("email"), pass = $('[data-f="pass"]', body)?.value || "";
+      if (!email || !pass) return say("E-posta ve şifreyi yaz.", "err");
+      busy = true; say(mode === "up" ? "Hesap açılıyor…" : "Giriş yapılıyor…");
+      const r = mode === "up" ? await api.cloud_sign_up(email, pass) : await api.cloud_sign_in(email, pass);
+      busy = false;
+      if (r.error) return say(r.error, "err");
+      if (r.confirm) { mode = "in"; msg = `${email} adresine bir onay bağlantısı gönderildi. Onayladıktan sonra buradan giriş yap.`; msgCls = "ok"; draw(); $('[data-f="email"]', body).value = email; return; }
+      msg = ""; S.cloud = await api.cloud_status(); draw(); toast("SOUND hesabına giriş yapıldı");
+    };
+    body.addEventListener("click", async e => {
+      const x = e.target.closest("[data-x]")?.dataset.x;
+      if (!x) return;
+      if (x === "close") done(null);
+      else if (x === "mode") { mode = mode === "up" ? "in" : "up"; msg = ""; draw(); }
+      else if (x === "submit") submit();
+      else if (x === "google") {
+        const r = await api.cloud_google();
+        if (r.error) return say(r.error, "err");
+        say("Tarayıcıda Google ile giriş yap; bitince buraya dönebilirsin.");
+      }
+      else if (x === "forgot") {
+        const email = field("email");
+        if (!email) return say("Önce e-posta adresini yaz.", "err");
+        const r = await api.cloud_reset_password(email);
+        say(r.error || `${email} adresine şifre sıfırlama bağlantısı gönderildi.`, r.error ? "err" : "ok");
+      }
+      else if (x === "sync") { S.cloud = await api.cloud_sync(); S.cloud.syncing = true; draw(); }
+      else if (x === "out") {
+        if (!await confirmBox("Çıkış yap", "Kitaplığın bu cihazda kalır; eşitleme durur.", "Çıkış yap")) return;
+        await api.cloud_sign_out(); S.cloud = await api.cloud_status(); msg = ""; draw(); toast("Çıkış yapıldı");
+      }
+      else if (x === "delete") {
+        if (!await confirmBox("Hesabı sil", "Hesabın ve sunucudaki kitaplık kopyası kalıcı olarak silinir. Bu cihazdaki kitaplığın kalır.", "Hesabı sil")) return;
+        const r = await api.cloud_delete_account();
+        if (r.error) return say(r.error, "err");
+        S.cloud = await api.cloud_status(); msg = ""; draw(); toast("Hesap silindi");
+      }
+    });
+    cloudBox = { draw };
+    draw();
+  });
+  cloudBox = null;
+}
+
 /* ---------- ayarlar ---------- */
 let settingsBox = null;
 function toggleHTML(key, on) { return `<button class="switch ${on ? "on" : ""}" data-set="${key}"><i></i></button>`; }
 async function openSettings() {
   let st = await api.settings();
   let ver = await api.app_version();
+  S.cloud = await api.cloud_status();
   await modal(`<h3>Ayarlar</h3><div id="setBody"></div>
     <div class="row-btns" style="margin-top:18px"><button class="pill fill" data-x="close">Kapat</button></div>`, (box, done) => {
     settingsBox = box;
@@ -289,6 +386,8 @@ async function openSettings() {
           ? `<button class="pill accent" data-x="restart">Yeniden başlat</button>`
           : `<button class="pill" data-x="checkUpdate" ${ver.git ? "" : "disabled"}>Şimdi denetle</button>`}</div>
         <div class="set-sec">Hesap</div>
+        <div class="set-row"><div><b>SOUND hesabı</b><p>${S.cloud?.signed_in ? `${esc(S.cloud.email || "Giriş yapıldı")} · ${esc(cloudLine(S.cloud))}`
+          : "Giriş yap; favorilerin, albümlerin ve klasörlerin telefonla bilgisayar arasında eşitlensin."}</p></div><button class="pill" data-x="cloud">${S.cloud?.signed_in ? "Aç" : "Giriş yap"}</button></div>
         <div class="set-row"><div><b>YouTube hesabı</b><p>Yaş doğrulaması isteyen şarkılar için.</p></div><button class="pill" data-x="account">Aç</button></div>`;
     };
     const save = async changes => { st = await api.update_settings(changes); S.settings = st.settings; setVolume(volPos, false); draw(); };
@@ -302,6 +401,7 @@ async function openSettings() {
       if (x === "close") done(null);
       else if (x === "clearCache") { st = await api.clear_cache(); draw(); toast("Önbellek temizlendi"); }
       else if (x === "account") { done(null); openAccount(); }
+      else if (x === "cloud") { done(null); openCloud(); }
       else if (x === "customize") { done(null); openCustomize(); }
       else if (x === "audioFx") { done(null); openAudioFx(); }
       else if (x === "stats") { done(null); openPage("stats"); }
@@ -671,16 +771,17 @@ function cardHTML(key, i, t) {
     <div class="cover"><img loading="lazy" src="${thumb(t)}"></div><div class="ct">${esc(t.title)}</div>
     <div class="cfoot"><span>${esc(t.artist)}</span><div class="acts"><button class="cdl" data-act="dl"></button><button class="cfav heart" data-act="fav"></button><button class="pbtn" data-act="play">${I.play}</button></div></div></div>`;
 }
+function plLabel(pl) { return pl.label || (pl.kind === "playlist" ? "Liste" : "Albüm"); }
 function albumCardHTML(pl) {
   const k = "pl" + Object.keys(S.plShown).length;
   S.plShown[k] = pl;
   return `<div class="card" data-pl="${k}" data-act="plopen">
     <div class="cover"><img loading="lazy" src="${thumb(pl)}"></div><div class="ct">${esc(pl.title)}</div>
-    <div class="cfoot"><span>${esc(pl.label || "Albüm")} · ${esc(pl.year || pl.artist)}</span><div class="acts"><button class="cdl" data-act="pldl"></button><button class="pbtn" data-act="plplay">${I.play}</button></div></div></div>`;
+    <div class="cfoot"><span>${esc(plLabel(pl))} · ${esc(pl.year || pl.artist)}</span><div class="acts"><button class="cdl" data-act="pldl"></button><button class="pbtn" data-act="plplay">${I.play}</button></div></div></div>`;
 }
 function artistCardHTML(a) {
   return `<div class="card circle" data-act="artist" data-aid="${esc(a.id || "")}" data-artist="${esc(a.name)}">
-    <div class="cover">${a.thumbnail ? `<img loading="lazy" src="${esc(a.thumbnail)}">` : tile(a.id || a.name, 160, I.user, null, 80)}</div><div class="ct">${esc(a.name)}</div>
+    <div class="cover">${a.thumbnail ? `<img loading="lazy" src="${esc(art(a.thumbnail))}">` : tile(a.id || a.name, 160, I.user, null, 80)}</div><div class="ct">${esc(a.name)}</div>
     <div class="cfoot"><span>${a.subscribers ? `${esc(a.subscribers)} abone` : "Sanatçı"}</span></div></div>`;
 }
 function skeletonCards(n = 8) {
@@ -788,6 +889,14 @@ function renderPage(keep = false) {
   afterRender();
   refreshItems(page);
   onScroll();
+}
+
+// Yeni öneriler aşağıdayken gelirse sayfayı altından çekme: üstte düğme göster, isteyince yenile
+function homeArrived() {
+  const shown = $("#page .card, #page .row"), scrolled = $("#scroll").scrollTop > 120;
+  if (!shown || !scrolled || !S.home.sections.length) { renderPage(true); return; }
+  if ($("#homeFresh")) return;
+  $("#page").insertAdjacentHTML("afterbegin", `<div id="homeFresh"><button class="pill accent" data-act="homeFresh">${I.refresh} Yeni öneriler</button></div>`);
 }
 
 function pageSignature() {
@@ -918,10 +1027,10 @@ function pagePlaylist(pl) {
   else if (tracks) extra = `<button class="pill accent" data-act="plsave" data-pl="${key}">${I.plus} Kitaplığa kaydet</button>`;
   else if (error) extra = `<button class="pill" data-act="plretry" data-pl="${key}">Tekrar dene</button>`;
   return collection({
-    label: "Albüm", title: pl.title, tracks: tracks || [], ctx: { kind: "playlist", key: `playlist:${pl.id}` },
+    label: plLabel(pl), title: pl.title, tracks: tracks || [], ctx: { kind: "playlist", key: `playlist:${pl.id}` },
     art: `<img class="art" src="${thumb(pl)}">`, glowUrl: thumb(pl), color: tileColor(pl.id), prefix: `${pl.artist} · `,
     extraActions: extra,
-    empty: error ? ["Albüm yüklenemedi", error] : tracks ? ["Bu listede şarkı yok", ""] : ["Yükleniyor…", "Albümün şarkıları getiriliyor."],
+    empty: error ? [`${plLabel(pl)} yüklenemedi`, error] : tracks ? ["Bu listede şarkı yok", ""] : ["Yükleniyor…", "Şarkılar getiriliyor."],
   });
 }
 
@@ -944,7 +1053,7 @@ function pageArtist(ref) {
       <div style="display:flex;gap:10px">${ref.name ? `<button class="pill" data-act="searchFor" data-q="${esc(ref.name)}">${I.search} Şarkılarını ara</button>` : ""}
       <button class="pill" data-act="artistRetry" data-k="${esc(k)}">Tekrar dene</button></div></div>`;
   }
-  afterRender = () => glowFrom(a.thumbnail, tileColor(a.id));
+  afterRender = () => glowFrom(art(a.thumbnail), tileColor(a.id));
   const key = registerList("artist", a.songs, { kind: "artist", key: `artist:${a.id}` });
   const stats = [a.listeners && `${esc(a.listeners)} aylık dinleyici`, a.subscribers && `${esc(a.subscribers)} abone`].filter(Boolean).join(" · ");
   let html = `<div class="artist-hero${a.banner ? " has-banner" : ""}" ${a.banner ? `style="background-image:url(&quot;${esc(a.banner)}&quot;)"` : ""}>
@@ -2169,13 +2278,13 @@ async function loadPlaylist(pl) {
 async function playPlaylist(pl) {
   const src = `playlist:${pl.id}`;
   if (P.source === src && P.current) { P.toggle(); return; }
-  if (!S.playlists[pl.id]) toast("Albüm yükleniyor…");
+  if (!S.playlists[pl.id]) toast(`${plLabel(pl)} yükleniyor…`);
   const tracks = await loadPlaylist(pl);
   if (tracks && tracks.length) P.playList(tracks, 0, src);
-  else toast(`Albüm açılamadı: ${S.playlistErrors[pl.id] || "şarkı yok"}`, true);
+  else toast(`${plLabel(pl)} açılamadı: ${S.playlistErrors[pl.id] || "şarkı yok"}`, true);
 }
 async function savePlaylist(pl, download = false) {
-  if (!S.playlists[pl.id]) toast("Albüm yükleniyor…");
+  if (!S.playlists[pl.id]) toast(`${plLabel(pl)} yükleniyor…`);
   const res = await api.save_playlist(pl, download);
   await syncLib();
   toast(res.error || res.message, !!res.error);
@@ -2314,6 +2423,7 @@ const ACT = {
   async forget(el) { setRecent(await api.remove_recent_search(el.dataset.q)); },
   async forgetAll() { setRecent(await api.clear_recent_searches()); toast("Arama geçmişi temizlendi"); },
   searchFor(el) { doSearch(el.dataset.q); $("#searchInput").blur(); },
+  homeFresh() { renderPage(); },
   homeRefresh() { toast("Öneriler yenileniyor…"); api.home(true).then(h => { S.home = h; if (S.page.kind === "home") renderPage(true); }); },
   downloadAll: async el => { const list = S.lists[el.closest("[data-list]").dataset.list]; const m = await api.download_all(list.tracks.map(plain)); if (m) toast(m); },
   albumMenu(el) { const r = el.getBoundingClientRect(); albumMenu(el.dataset.ref, r.left, r.bottom + 4); },
@@ -2566,8 +2676,13 @@ window.SOUND = {
       case "app_update": showAppUpdate(d); break;
       case "import": importProgress(d); break;
 
-      case "home": S.home = d; if (S.page.kind === "home") renderPage(true); break;
+      case "home": S.home = d; if (S.page.kind === "home") homeArrived(); break;
       case "account": { const next = accountDone; accountDone = null; next?.(); break; }
+      case "cloud": cloudChanged(d); break;
+      case "cloud_login":
+        if (d.error) toast("Google girişi: " + d.error, true);
+        else { toast("SOUND hesabına giriş yapıldı"); api.cloud_status().then(cloudChanged); }
+        break;
       case "age": openAccount(`“${short(d.title, 50)}” için YouTube yaş doğrulaması istiyor.`, () => api.retry_download(d.key)); break;
       case "command":
         ({ toggle: () => P.toggle(), play: () => !P.isPlaying() && P.toggle(), pause: () => P.isPlaying() && P.toggle(),

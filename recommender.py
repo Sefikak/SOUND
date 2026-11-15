@@ -4,7 +4,7 @@ from itertools import zip_longest
 
 import yt_dlp
 
-from searcher import radio, remove_duplicates, search_albums, search_playlists, search_tracks, track_from_entry
+from searcher import _norm, radio, remove_duplicates, search_albums, search_playlists, search_tracks, track_from_entry
 
 COLD_START = [
     ("Popüler Türkçe Pop", "türkçe pop hit şarkılar"),
@@ -71,6 +71,31 @@ def _albums(query):
     return search_playlists(query, 12)
 
 
+def _artist_albums(artist):
+    """(sanatçı, albümler). Arama sanatçının adına benzeyen başka sanatçıları da getiriyor ("Global Records"
+    → "Global Music Station"); en az 3 albüm gerçekten ona ait değilse popüler albümlere düş."""
+    if artist:
+        key = _norm(artist)
+        own = [a for a in _albums(f"{artist} albüm") if key and key in _norm(a.get("artist"))]
+        if len(own) >= 3:
+            return artist, own
+    return None, _albums("türkçe pop albüm")
+
+
+def _distinct_covers(lists, keep=6):
+    """YouTube listenin kapağı olarak ilk videoyu veriyor; aynı hit ile başlayan listeler aynı görünüyor.
+    Kapağı tekrar edenleri ele, yeterince liste kalmazsa sona koy."""
+    unique, repeats, covers = [], [], set()
+    for item in lists:
+        cover = item.get("thumbnail")
+        if cover and cover in covers:
+            repeats.append(item)
+        else:
+            covers.add(cover)
+            unique.append(item)
+    return unique if len(unique) >= keep else unique + repeats[:keep - len(unique)]
+
+
 def _interleave(pools):
     return [t for group in zip_longest(*pools) for t in group if t]
 
@@ -94,20 +119,19 @@ def build_home(recent, top_artists, known_ids):
     sections, errors = [], []
 
     # Albüm / liste önerileri: en çok dinlenen sanatçı, yoksa popüler albümler
-    album_query = f"{top_artists[0][0]} albüm" if top_artists else "türkçe pop albüm"
     album_job_pool = ThreadPoolExecutor(1)
-    album_job = album_job_pool.submit(_albums, album_query)
+    album_job = album_job_pool.submit(_artist_albums, top_artists[0][0] if top_artists else None)
     album_job_pool.shutdown(wait=False)
 
     def album_section():
         try:
-            albums = album_job.result()
+            artist, albums = album_job.result()
         except Exception as error:
             errors.append(error)
             return None
         if not albums:
             return None
-        title = f"{top_artists[0][0]} albümleri ve listeleri" if top_artists else "Popüler albümler ve listeler"
+        title = f"{artist} albümleri ve listeleri" if artist else "Popüler albümler ve listeler"
         return {"key": "albums", "type": "albums", "title": title,
                 "subtitle": "Sürükleyip kitaplığına bırakabilirsin", "albums": albums}
 
@@ -118,6 +142,7 @@ def build_home(recent, top_artists, known_ids):
         except Exception as error:
             errors.append(error)
             return None
+        lists = _distinct_covers(lists)
         if not lists:
             return None
         return {"key": "playlists", "type": "albums", "title": "Senin için listeler",

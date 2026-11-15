@@ -3,9 +3,12 @@
 /            arayüz dosyaları (web/ klasörü)
 /music/...   indirilen şarkılar (Opus, eskiler MP3) · /cache/... dinleme önbelleği  · /videos/... indirilen videolar  (ileri sarma için Range destekli)
 /thumb/ID    kapak resmi: önce data/thumbs, yoksa YouTube'dan alınıp oraya kaydedilir (çevrimdışı da görünsün)
+/art?src=URL YouTube Music albüm/sanatçı kapağı, aynı şekilde önbellekli (Google, WebView'dan art arda gelen
+             doğrudan isteklere 429 veriyor; buradan tek tek ve bir kez iniyor)
 /stream/ID/audio|video   YouTube akışı: YouTube bazı adresleri yalnızca yt-dlp'nin kullandığı tarayıcı
              başlıklarıyla verir; oynatıcı bu başlıkları gönderemediği için akış buradan aktarılır
 """
+import hashlib
 import mimetypes
 import os
 import re
@@ -47,16 +50,30 @@ def _inside(folder, name):
 ART_HOSTS = (".googleusercontent.com", ".ggpht.com", "i.ytimg.com")
 
 
+def _art_source(source):
+    host = urllib.parse.urlparse(source or "").hostname or ""
+    return source if source and source.startswith("https://") and host.endswith(ART_HOSTS) else None
+
+
 def _thumbnail(video_id, source=None):
     """Kapağı diskte yoksa indir (YouTube Music'in kare kapağı varsa o); aynı kapak için aynı anda tek istek."""
-    path = os.path.join(THUMB_DIR, video_id + ".jpg")
-    host = urllib.parse.urlparse(source or "").hostname or ""
-    if not (source and source.startswith("https://") and host.endswith(ART_HOSTS)):
-        source = f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg"
+    return _cached_image(video_id, _art_source(source) or f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg")
+
+
+def _art(source):
+    """Şarkıya bağlı olmayan kapak (albüm, sanatçı): adresin özetiyle saklanır."""
+    source = _art_source(source)
+    if not source:
+        return None
+    return _cached_image("art_" + hashlib.sha1(source.encode()).hexdigest()[:24], source)
+
+
+def _cached_image(name, source):
+    path = os.path.join(THUMB_DIR, name + ".jpg")
     if os.path.exists(path):
         return path
     with _thumb_guard:
-        lock = _thumb_locks.setdefault(video_id, threading.Lock())
+        lock = _thumb_locks.setdefault(name, threading.Lock())
     with lock:
         if os.path.exists(path):
             return path
@@ -92,6 +109,8 @@ class Handler(BaseHTTPRequestHandler):
                 video_id = path[7:]
                 source = urllib.parse.parse_qs(parsed.query).get("src", [None])[0]
                 self._file(_thumbnail(video_id, source) if VIDEO_ID.match(video_id) else None, cache=True)
+            elif path == "/art":
+                self._file(_art(urllib.parse.parse_qs(parsed.query).get("src", [None])[0]), cache=True)
             else:
                 self._file(_inside(WEB_DIR, path.lstrip("/") or "index.html"), cache=False)
         except (ConnectionError, TimeoutError):

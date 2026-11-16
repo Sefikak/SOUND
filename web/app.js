@@ -258,10 +258,11 @@ let cloudBox = null;
 function cloudLine(c) {
   if (c.error) return c.error;
   if (c.syncing) return "Eşitleniyor…";
+  if (c.auto === false && !c.last_sync) return "Otomatik eşitleme kapalı";
   if (!c.last_sync) return "Eşitleme bekleniyor";
   const s = Math.round(Date.now() / 1000 - c.last_sync);
   return "Eşitlendi · " + (s < 60 ? "az önce" : s < 3600 ? Math.round(s / 60) + " dk önce" : new Date(c.last_sync * 1000).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }))
-    + (c.realtime ? " · anında" : "");  // Realtime bağlıysa diğer cihazların değişikliği hemen gelir
+    + (c.auto === false ? " · otomatik eşitleme kapalı" : c.realtime ? " · anında" : "");  // Realtime bağlıysa diğer cihazların değişikliği hemen gelir
 }
 function cloudChanged(status) {
   S.cloud = status;
@@ -283,6 +284,7 @@ async function openCloud() {
         body.innerHTML = `<p>Favorilerin, albümlerin ve klasörlerin bu hesapla giriş yaptığın her cihazda aynı kalır.
           İndirilen dosyalar ve ayarlar her cihazda ayrıdır.</p>
           <div class="set-row"><div><b>${esc(c.email || "Hesap")}</b><p>${esc(cloudLine(c))}</p></div><button class="pill" data-x="sync" ${c.syncing ? "disabled" : ""}>Şimdi eşitle</button></div>
+          <div class="set-row"><div><b>Otomatik eşitle</b><p>Uygulama açılınca ve değişiklik oldukça kendiliğinden eşitlenir; diğer cihazdaki değişiklik birkaç saniyede gelir. Kapalıyken yalnızca "Şimdi eşitle" ile eşitlenir.</p></div><button class="switch ${c.auto !== false ? "on" : ""}" data-x="auto"><i></i></button></div>
           <div class="status ${msgCls}">${esc(msg)}</div>
           <div class="row-btns"><button class="textbtn" data-x="delete">Hesabımı sil</button><button class="textbtn" data-x="out">Çıkış yap</button><button class="pill fill" data-x="close">Kapat</button></div>`;
       } else {
@@ -331,6 +333,7 @@ async function openCloud() {
         say(r.error || `${email} adresine şifre sıfırlama bağlantısı gönderildi.`, r.error ? "err" : "ok");
       }
       else if (x === "sync") { S.cloud = await api.cloud_sync(); S.cloud.syncing = true; draw(); }
+      else if (x === "auto") { S.cloud = await api.cloud_set_auto((S.cloud || {}).auto === false); draw(); toast(S.cloud.auto ? "Otomatik eşitleme açık" : "Otomatik eşitleme kapalı"); }
       else if (x === "out") {
         if (!await confirmBox("Çıkış yap", "Kitaplığın bu cihazda kalır; eşitleme durur.", "Çıkış yap")) return;
         await api.cloud_sign_out(); S.cloud = await api.cloud_status(); msg = ""; draw(); toast("Çıkış yapıldı");
@@ -1197,7 +1200,15 @@ function shownTracks() {
   const by = { title: t => t.title.toLocaleLowerCase("tr"), artist: t => t.artist.toLocaleLowerCase("tr") + t.title.toLocaleLowerCase("tr") };
   if (by[v.sort]) shown.sort((a, b) => by[v.sort](a).localeCompare(by[v.sort](b), "tr"));
   else if (v.sort === "duration") shown.sort((a, b) => (a.duration || 0) - (b.duration || 0));
-  else if (v.sort === "recent") shown.sort((a, b) => ((L.t(b.id) || {}).downloaded_at || 0) - ((L.t(a.id) || {}).downloaded_at || 0));
+  else if (v.sort === "recent") {
+    // Favori/albüm: listeye eklenme zamanı (cihazlar arasında eşitlenir). İndirilenler: indirilme zamanı.
+    // Zamanı bilinmeyen (bu özellikten önce eklenmiş) şarkılar en sonda, listedeki sıralarıyla: favorilerde
+    // yeni eklenen başa, albümlerde sona girdiği için albümde sıra ters çevrilir.
+    const ctx = list.ctx, stamps = ctx.kind === "favorites" ? S.lib.added?.fav : ctx.kind === "album" ? S.lib.added?.["album:" + ctx.album] : null;
+    const when = stamps ? t => stamps[t.id] || 0 : t => (L.t(t.id) || {}).downloaded_at || 0;
+    const pos = new Map(list.tracks.map((t, i) => [t.id, ctx.kind === "album" ? -i : i]));
+    shown.sort((a, b) => (when(b) - when(a)) || (pos.get(a.id) - pos.get(b.id)));
+  }
   return { shown, reorder: v.sort === "custom" && !q };
 }
 function listRows() {

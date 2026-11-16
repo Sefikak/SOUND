@@ -106,6 +106,7 @@ class Cloud:
         self._lock = threading.RLock()
         self._wake = threading.Event()
         self._push_timer = None
+        self._manual = False  # otomatik eşitleme kapalıyken de "Şimdi eşitle" ve giriş eşitlesin
         self._applying = False
         self._thread = None
         self._rt_thread = None
@@ -118,6 +119,11 @@ class Cloud:
         library.subscribe(self._library_changed)
 
     # ---------- durum ----------
+
+    @property
+    def auto(self):
+        """Ayarlar > Hesap > Otomatik eşitle (varsayılan açık): açılışta, arka planda ve değişiklikte eşitleme."""
+        return self.lib.settings.get("cloud_auto", True) is not False
 
     @property
     def configured(self):
@@ -138,6 +144,7 @@ class Cloud:
             "error": self.error,
             "last_sync": self.last_sync,
             "realtime": self.realtime,
+            "auto": self.auto,
         }
 
     def _load_state(self):
@@ -280,7 +287,7 @@ class Cloud:
         self._store_session(session)
         self.error = None
         self.start()
-        self.sync_now()
+        self.sync_now(manual=True)  # ilk birleştirme otomatik eşitleme kapalı olsa da yapılır
         self._notify()
 
     def sign_out(self):
@@ -324,7 +331,7 @@ class Cloud:
             return  # paket yoksa yalnızca yoklama
         delay = 2
         while True:
-            if not self.state.get("refresh_token"):
+            if not self.state.get("refresh_token") or not self.auto:
                 time.sleep(3)
                 continue
             try:
@@ -363,7 +370,7 @@ class Cloud:
                               "access_token": token})
             ws.settimeout(5)
             beat = time.time()
-            while self.state.get("refresh_token") and (self.user or {}).get("id") == uid:
+            while self.state.get("refresh_token") and (self.user or {}).get("id") == uid and self.auto:
                 now = time.time()
                 if now - beat >= REALTIME_BEAT:
                     send("heartbeat", {}, "phoenix")
@@ -398,11 +405,20 @@ class Cloud:
             except Exception:
                 pass
 
-    def sync_now(self):
+    def sync_now(self, manual=False):
+        """manual=True: kullanıcı istedi (düğme, giriş); otomatik eşitleme kapalı olsa da eşitler."""
+        if manual:
+            self._manual = True
         self._wake.set()
 
+    def set_auto(self, on):
+        self.lib.update_settings({"cloud_auto": bool(on)})
+        if on:
+            self.sync_now()  # açılınca kaçan değişiklikler hemen gelsin
+        self._notify()
+
     def _library_changed(self):
-        if self._applying or not self.state.get("refresh_token"):
+        if self._applying or not self.state.get("refresh_token") or not self.auto:
             return
         with self._lock:
             if self._push_timer:
@@ -415,7 +431,8 @@ class Cloud:
         while True:
             self._wake.wait(POLL_SECONDS)
             self._wake.clear()
-            if not self.state.get("refresh_token"):
+            manual, self._manual = self._manual, False
+            if not self.state.get("refresh_token") or not (self.auto or manual):
                 continue
             self.syncing = True
             try:
@@ -447,15 +464,23 @@ class Cloud:
             docs = {}
             for track_id in data["favorites"]:
                 if track_id in tracks:
-                    docs["fav:" + track_id] = {"track": _meta(tracks[track_id])}
+                    doc = {"track": _meta(tracks[track_id])}
+                    at = lib.added_at("fav", track_id)
+                    if at:
+                        doc["added"] = round(at)  # "Son eklenen" sıralaması cihazlar arasında aynı olsun
+                    docs["fav:" + track_id] = doc
             docs["order:favorites"] = {"ids": [i for i in data["favorites"] if i in tracks]}
             for album_id, album in data["albums"].items():
                 ids = list(album["tracks"])
-                docs["album:" + album_id] = {
+                doc = {
                     "name": album["name"], "folder": album.get("folder"), "created": album.get("created"),
                     "source": album.get("source"), "tracks": ids,
                     "meta": {i: _meta(tracks[i]) for i in ids if i in tracks},
                 }
+                stamps = {i: round(lib.added_at("album:" + album_id, i)) for i in ids if lib.added_at("album:" + album_id, i)}
+                if stamps:
+                    doc["added"] = stamps
+                docs["album:" + album_id] = doc
             for folder_id, folder in data["folders"].items():
                 docs["folder:" + folder_id] = {"name": folder["name"], "created": folder.get("created")}
         return docs
@@ -503,6 +528,7 @@ class Cloud:
             return
         known = self.state.setdefault("known", {})
         changes = {}
+        local = self.documents()
         for row in rows:
             key, value, deleted = row["key"], row.get("value"), row.get("deleted")
             if deleted:
@@ -512,6 +538,13 @@ class Cloud:
             else:
                 if known.get(key) == _digest(value):
                     continue  # zaten bizde olan (çoğunlukla bizim gönderdiğimiz) hâl
+                mine = local.get(key)
+                if (not merge and isinstance(value, dict) and "added" not in value and mine is not None
+                        and _digest(_without_added(mine)) == _digest(value)):
+                    # Eklenme zamanını bilmeyen eski bir sürüm aynı kaydı geri yazdı: bizdeki zaman kalsın,
+                    # yeniden gönderilmesin (yoksa iki cihaz kaydı sonsuza dek birbirine geri yazar)
+                    known[key] = _digest(mine)
+                    continue
                 changes[key] = value
         if changes:
             self._apply(changes, merge)
@@ -528,7 +561,7 @@ class Cloud:
         self._save_state()
 
     def _apply(self, changes, merge):
-        fav_add, fav_del, order, albums, folders = [], [], None, {}, {}
+        fav_add, fav_del, order, albums, folders, added = [], [], None, {}, {}, {}
         for key, value in changes.items():
             kind, _, item = key.partition(":")
             if kind == "fav":
@@ -536,17 +569,29 @@ class Cloud:
                     fav_del.append(item)
                 elif value.get("track", {}).get("id"):
                     fav_add.append(value["track"])
+                    at = value.get("added")
+                    if at or merge:  # ilk birleştirmede zamanı bilinmeyen "şimdi eklendi" sayılmasın
+                        added[("fav", value["track"]["id"])] = at or 0
             elif kind == "order" and item == "favorites" and value is not None:
                 order = value.get("ids") or []
             elif kind == "album":
                 albums[item] = value
+                if value is not None:
+                    stamps = value.get("added") or {}
+                    for track_id in value.get("tracks") or []:
+                        if stamps.get(track_id) or merge:
+                            added[("album:" + item, track_id)] = stamps.get(track_id) or 0
             elif kind == "folder":
                 folders[item] = value
         self._applying = True
         try:
-            self.lib.apply_cloud(fav_add, fav_del, order, albums, folders, merge=merge)
+            self.lib.apply_cloud(fav_add, fav_del, order, albums, folders, merge=merge, added=added)
         finally:
             self._applying = False
+
+
+def _without_added(doc):
+    return {k: v for k, v in doc.items() if k != "added"}
 
 
 class _Unauthorized(CloudError):

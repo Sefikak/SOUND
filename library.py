@@ -49,9 +49,12 @@ CREATE TABLE IF NOT EXISTS listens (session TEXT PRIMARY KEY, track_id TEXT, tit
     duration INTEGER, at REAL, seconds REAL, plays INTEGER DEFAULT 1, seeded INTEGER DEFAULT 0);
 CREATE INDEX IF NOT EXISTS listens_at ON listens (at);
 CREATE TABLE IF NOT EXISTS loudness (track_id TEXT PRIMARY KEY, lufs REAL, seconds REAL);
+-- listeye eklenme zamanı ("Son eklenen" sıralaması); list: "fav" ya da "album:<kimlik>", at=0: bilinmiyor
+CREATE TABLE IF NOT EXISTS added (list TEXT, track_id TEXT, at REAL, PRIMARY KEY (list, track_id));
 """
 DEFAULT_SETTINGS = {"crossfade": False, "crossfade_seconds": 6, "gapless": True, "cache_mb": 1500, "autoplay": True,
-                    "normalize": True, "norm_target": -14}
+                    "normalize": True, "norm_target": -14,
+                    "cloud_auto": True}  # SOUND hesabı: açılışta ve arka planda kendiliğinden eşitle
 
 
 class Library:
@@ -74,7 +77,9 @@ class Library:
             "volume": 0.7,
             "youtube_auth": None,
             "settings": dict(DEFAULT_SETTINGS),
+            "added": {},  # liste anahtarı → {şarkı: eklenme zamanı}
         }
+        self._pending_added = {}  # eşitlemeden gelen zamanlar: (liste, şarkı) → zaman; denetleme bunları kullanır
         self._undo = []  # geri alma: son değişikliklerden önceki kitaplık düzeni (yalnızca bu oturumda)
         fresh = not os.path.exists(DB_FILE)
         self.db = sqlite3.connect(DB_FILE, check_same_thread=False, isolation_level=None)
@@ -141,6 +146,15 @@ class Library:
                            for t, at, plays in db.execute("SELECT track_id, at, plays FROM history ORDER BY pos")]
         for key, value in db.execute("SELECT key, value FROM kv"):
             data[key] = json.loads(value)
+        data["added"] = {}
+        for list_key, track_id, at in db.execute("SELECT list, track_id, at FROM added"):
+            data["added"].setdefault(list_key, {})[track_id] = at or 0
+        if not data.get("added_v1"):
+            # Bu sürümden önce eklenenlerin zamanı bilinmiyor: 0 (sıralamada listedeki sıraya göre en sona)
+            with self._tx():
+                self._reconcile_added(unknown=True)
+                data["added_v1"] = True
+                self._write_kv("added_v1", True)
         data["settings"] = {**DEFAULT_SETTINGS, **(data.get("settings") or {})}
         from searcher import JUNK_NAMES, guess_artist
         for track in data["tracks"].values():
@@ -162,6 +176,8 @@ class Library:
 
         def __exit__(self, kind, value, tb):
             try:
+                if not kind:
+                    self.lib._reconcile_added()  # her değişiklikte: listeye yeni girene zaman, çıkanın zamanı silinir
                 self.lib.db.execute("ROLLBACK" if kind else "COMMIT")
             finally:
                 self.lib._lock.release()
@@ -201,6 +217,45 @@ class Library:
             if track_id not in keep and not tracks[track_id].get("file") and not tracks[track_id].get("video_file"):
                 del tracks[track_id]
                 self.db.execute("DELETE FROM tracks WHERE id=?", (track_id,))
+
+    def _list_members(self):
+        lists = {"fav": self.data["favorites"]}
+        for album_id, album in self.data["albums"].items():
+            lists["album:" + album_id] = album["tracks"]
+        return lists
+
+    def _reconcile_added(self, unknown=False):
+        """Eklenme zamanlarını listelerle eşler. Yeni girene şimdiki zaman (eşitlemeden gelmişse onunki),
+        çıkanın kaydı silinir. Bütün ekleme yolları (favori, albüm, içe aktarma, geri alma, eşitleme) buradan geçer."""
+        added, now, db = self.data["added"], time.time(), self.db
+        lists = self._list_members()
+        for key in [k for k in added if k not in lists]:
+            del added[key]
+            db.execute("DELETE FROM added WHERE list=?", (key,))
+        for key, ids in lists.items():
+            stamps = added.setdefault(key, {})
+            if len(stamps) != len(ids) or any(i not in stamps for i in ids):
+                members = set(ids)
+                for track_id in [t for t in stamps if t not in members]:
+                    del stamps[track_id]
+                    db.execute("DELETE FROM added WHERE list=? AND track_id=?", (key, track_id))
+                for track_id in ids:
+                    if track_id not in stamps:
+                        at = 0 if unknown else self._pending_added.pop((key, track_id), now)
+                        stamps[track_id] = at
+                        db.execute("INSERT OR REPLACE INTO added VALUES (?,?,?)", (key, track_id, at))
+        # listede zaten olana eşitlemeden zaman gelmişse: bilinmeyeni doldur, ikisi de biliniyorsa eskisi kalır
+        for (key, track_id), at in list(self._pending_added.items()):
+            stamps = added.get(key)
+            if stamps is not None and track_id in stamps and at:
+                current = stamps[track_id]
+                if not current or at < current:
+                    stamps[track_id] = at
+                    db.execute("INSERT OR REPLACE INTO added VALUES (?,?,?)", (key, track_id, at))
+        self._pending_added.clear()
+
+    def added_at(self, list_key, track_id):
+        return (self.data["added"].get(list_key) or {}).get(track_id) or 0
 
     def subscribe(self, callback):
         self._listeners.append(callback)
@@ -558,10 +613,12 @@ class Library:
 
     # ---------- hesap eşitlemesi (cloud.py) ----------
 
-    def apply_cloud(self, fav_add, fav_del, order, albums, folders, merge=False):
+    def apply_cloud(self, fav_add, fav_del, order, albums, folders, merge=False, added=None):
         """Başka bir cihazdan gelen değişiklikler. albums/folders: kimlik → değer (None: silindi).
-        merge=True (hesaba ilk bağlanış): yerelde olanlar korunur, albümlerin şarkıları birleştirilir."""
+        merge=True (hesaba ilk bağlanış): yerelde olanlar korunur, albümlerin şarkıları birleştirilir.
+        added: (liste, şarkı) → eklenme zamanı (0: gönderen cihaz bilmiyor)."""
         with self._lock:
+            self._pending_added.update(added or {})
             data, favorites = self.data, self.data["favorites"]
             with self._tx():
                 for track in fav_add:

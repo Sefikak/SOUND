@@ -177,6 +177,7 @@ class Backend:
             "favorites": data["favorites"],
             "albums": data["albums"],
             "folders": data["folders"],
+            "added": data["added"],  # listeye eklenme zamanları ("Son eklenen" sıralaması)
             "recent": [t["id"] for t in self.lib.recent_tracks(30)],
             "history": [e["id"] for e in data["history"]],
             "top_artists": [[artist, track["id"]] for artist, track in self.lib.top_artists(12)],
@@ -1404,7 +1405,11 @@ class Api:
         return self._b.cloud_google()
 
     def cloud_sync(self):
-        self._b.cloud.sync_now()
+        self._b.cloud.sync_now(manual=True)
+        return self._b.cloud.status()
+
+    def cloud_set_auto(self, on):
+        self._b.cloud.set_auto(on)
         return self._b.cloud.status()
 
     def cloud_sign_out(self):

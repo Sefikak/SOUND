@@ -24,8 +24,10 @@ class Window:
     def set_title(self, title):
         pass
 
-    def create_file_dialog(self, *args, **kwargs):
-        return None
+    def create_file_dialog(self, dialog_type=None, directory="", allow_multiple=False, save_filename="", file_types=()):
+        """Android'in dosya seçicisi; seçilenler uygulamanın önbelleğine kopyalanmış yollar olarak döner."""
+        paths = json.loads(str(self.bridge.pickFiles(bool(allow_multiple))))
+        return paths or None
 
 
 def _use_data_dir(data_dir):

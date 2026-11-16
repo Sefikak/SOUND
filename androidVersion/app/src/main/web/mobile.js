@@ -78,6 +78,9 @@
   });
   const original = renderPage;
   window.renderPage = keep => { original(keep); syncTabs(); };
+  // koddan açılan sayfa (Sanatçı Mix sonrası albüm, bildirimden açılan sayfa...) kitaplık ekranının arkasında kalmasın
+  const originalOpen = openPage;
+  window.openPage = (...args) => { libOpen(false); return originalOpen(...args); };
 
   /* dokunma: masaüstünde çift tıklanan satır burada tek dokunuşla çalar; sürükle-bırak kapalı (kaydırmayla çakışır) */
   document.addEventListener("click", e => {

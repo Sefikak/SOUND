@@ -87,8 +87,7 @@ html.mobile [data-act="openFolder"] { display: none; }
 html.mobile .set-row:has(.seg) { flex-wrap: wrap; }
 html.mobile .set-row .seg { flex-wrap: wrap; border-radius: 16px; max-width: 100%; }
 
-/* Spotify penceresi: telefonda dosya seçme henüz yok, bağlantıyla ve hesapla aktarma var */
-html.mobile .dialog p:has([data-x="privacy"]), html.mobile .dialog div:has(> [data-x="files"]) { display: none !important; }
+/* Spotify penceresi: dosya seçme telefonda da var (Android dosya seçicisi, android_main.Window.create_file_dialog) */
 html.mobile ol.steps { padding-left: 20px; }
 html.mobile .copyline code { overflow-wrap: anywhere; }
 html.mobile .dialog { max-height: 92vh; overflow-y: auto; }

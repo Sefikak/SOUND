@@ -35,7 +35,6 @@ APK dallara değil etikete konur; masaüstü kullanıcılarının `git fetch`'i 
 ## Mobilde henüz olmayanlar
 
 - Birleşik video dosyası (ffmpeg gerekir). Video indirince görüntü en çok 720p sessiz dosya olarak iner, ses ayrıca indirilir; uygulama ikisini birlikte oynatır.
-- Spotify dosyasıyla aktarma. Spotify hesabıyla ve liste bağlantısıyla aktarma var; Spotify girişi telefonun tarayıcısında, Google girişi uygulamanın içinde açılır.
 - Sürükle-bırak: yerine ⋯ menüsü kullanılır.
 
 ## yt-dlp güncellemesi

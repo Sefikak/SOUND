@@ -10,6 +10,7 @@ import android.net.ConnectivityManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
@@ -29,6 +30,7 @@ import android.widget.TextView
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.addCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.content.pm.PackageInfoCompat
@@ -37,8 +39,10 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.chaquo.python.PyObject
 import com.chaquo.python.Python
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 
 /** Tek ekran: masaüstü SOUND arayüzünü açan WebView. Arka ucu (Python) ve arayüzü birbirine bağlar. */
@@ -52,6 +56,44 @@ class MainActivity : ComponentActivity() {
     private var login: View? = null
     private var loginWeb: WebView? = null
     @Volatile private var loginAddress = ""
+
+    // Dosya seçici (Spotify verisiyle aktarma, çerez dosyası): Python'un iş parçacığı seçim bitene kadar bekler
+    @Volatile private var pickWait: CountDownLatch? = null
+    @Volatile private var picked: List<Uri> = emptyList()
+    private val pickMany = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        picked = uris ?: emptyList(); pickWait?.countDown()
+    }
+    private val pickOne = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        picked = listOfNotNull(uri); pickWait?.countDown()
+    }
+
+    /** Seçilen dosyaları uygulamanın önbelleğine kopyalar (Python content:// okuyamaz), yolları JSON dizisi olarak döner. */
+    private fun pickFiles(multiple: Boolean): String {
+        val latch = CountDownLatch(1)
+        picked = emptyList()
+        pickWait = latch
+        runOnUiThread {
+            runCatching { if (multiple) pickMany.launch(arrayOf("*/*")) else pickOne.launch(arrayOf("*/*")) }
+                .onFailure { latch.countDown() }
+        }
+        latch.await()
+        val dir = File(cacheDir, "picked").apply { deleteRecursively(); mkdirs() }
+        val paths = JSONArray()
+        picked.forEachIndexed { i, uri ->
+            runCatching {
+                val name = (displayName(uri) ?: "dosya$i").replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                val out = File(dir, if (File(dir, name).exists()) "$i-$name" else name)
+                contentResolver.openInputStream(uri)?.use { input -> out.outputStream().use { input.copyTo(it) } }
+                if (out.exists()) paths.put(out.path)
+            }.onFailure { Log.e("SOUND", "Seçilen dosya kopyalanamadı", it) }
+        }
+        return paths.toString()
+    }
+
+    private fun displayName(uri: Uri): String? =
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+            if (it.moveToFirst()) it.getString(0) else null
+        }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -262,6 +304,8 @@ class MainActivity : ComponentActivity() {
         fun installApk(path: String) {
             runOnUiThread { runCatching { install(File(path)) }.onFailure { Log.e("SOUND", "Güncelleme açılamadı", it) } }
         }
+
+        fun pickFiles(multiple: Boolean): String = this@MainActivity.pickFiles(multiple)
 
         fun playerState(json: String) {
             runOnUiThread { PlaybackService.update(this@MainActivity, JSONObject(json), web.url) }

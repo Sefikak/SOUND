@@ -1,12 +1,11 @@
 {
-  "versionCode": 8,
-  "versionName": "0.1.7",
-  "sha256": "bd8011405daf1e25dec16ac1c7e62b4330841a12a0b2d2b19dc3e4cea64c67e8",
-  "url": "https://github.com/Sefikak/SOUND/raw/android-0.1.7/SOUND-android-0.1.7.apk",
+  "versionCode": 9,
+  "versionName": "0.1.8",
+  "sha256": "48d083c84a5558293239017f5f04d115fdbead411eccb8b5a12255da40bcbc63",
+  "url": "https://github.com/Sefikak/SOUND/raw/android-0.1.8/SOUND-android-0.1.8.apk",
   "notes": [
-    "SOUND hesabı: e-postayla giriş yap, favori ve albümlerin bilgisayarla eşitlensin",
-    "Kapaklar artık daha güvenilir yükleniyor",
-    "Ana sayfa aşağıdayken yenilenmiyor; yeni öneriler için düğme çıkıyor",
-    "Albüm ve liste etiketleri düzeltildi"
+    "Kitaplık artık telefonla bilgisayar arasında anında (yaklaşık 1 sn) eşitleniyor",
+    "Google ile giriş: tarayıcıdaki yeni sayfadan tek dokunuşla SOUND'a dönülüyor",
+    "Açılış daha hızlı: yt-dlp arka planda yükleniyor"
   ]
 }

@@ -75,11 +75,17 @@ def _mark_bad(state, version):
         state["good"] = None
 
 
+_choices = []  # activate'in seçtiği indirilmiş sürümler (öncelik sırasıyla); warm() sırayla dener
+_state = None
+
+
 def activate(data_dir):
-    """yt_dlp ilk kez içe aktarılmadan önce çağrılır. Hangi sürüm olursa olsun yt_dlp yüklenmiş olarak döner."""
-    global _root, _running
+    """yt_dlp ilk kez içe aktarılmadan önce çağrılır ve hemen döner: yalnızca hangi sürümün yükleneceğini seçer
+    (sys.path'in önüne koyar). Asıl yükleme ve doğrulama warm() ile arka planda olur; yt_dlp'nin yüklenmesi
+    telefonda saniyeler sürdüğü için açılış onu beklemez. Arada yt_dlp'yi kim isterse seçilen sürümü alır."""
+    global _root, _state
     _root = os.path.join(data_dir, "ytdlp")
-    state = _load()
+    state = _state = _load()
     bundled = _key(_bundled_version())
 
     candidate = state.get("candidate")
@@ -88,14 +94,26 @@ def activate(data_dir):
         _save(state)
         candidate = None
 
+    _choices.clear()
     for version in (candidate, state.get("good")):
         if not version or not os.path.isdir(_path(version)) or (bundled and _key(version) <= bundled):
             continue  # uygulama güncellenince APK'daki sürüm daha yeni olabilir
-        if version == candidate:
+        _choices.append(version)
+    if _choices:
+        if _choices[0] == candidate:
             state["tries"] = state.get("tries", 0) + 1
             _save(state)  # yükleme süreci öldürürse bir sonraki açılış bunu buradan anlar
+        sys.path.insert(0, _path(_choices[0]))
+
+
+def warm():
+    """yt_dlp'yi arka planda yükler ve seçilen sürümü doğrular. Yüklenemezse sıradakine, o da olmazsa APK'dakine düşer."""
+    global _running
+    state = _state if _state is not None else _load()
+    for i, version in enumerate(list(_choices)):
         folder = _path(version)
-        sys.path.insert(0, folder)
+        if i and folder not in sys.path:
+            sys.path.insert(0, folder)
         try:
             import yt_dlp  # noqa: F401
             from yt_dlp.version import __version__
@@ -106,13 +124,13 @@ def activate(data_dir):
             _mark_bad(state, version)
             _save(state)
             continue
-        if version == candidate:
+        if version == state.get("candidate"):
             state["tries"] = 0
             _save(state)
         _running = version
         break
     import yt_dlp  # noqa: F401, F811  (hiçbiri olmadıysa APK'daki)
-    if os.path.isdir(_root):
+    if _root and os.path.isdir(_root):
         _cleanup(state)  # bırakılan sürümler ve yarım kalmış indirmeler yer kaplamasın
 
 

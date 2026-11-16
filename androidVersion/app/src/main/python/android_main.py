@@ -237,11 +237,12 @@ def start(data_dir, native):
     import mediaserver
     mediaserver.WEB_DIR = os.path.dirname(webui.__file__)
     import updater
-    updater.activate(data_dir)  # yt_dlp'yi ilk içe aktaran webapp'tan önce: indirilmiş sürüm öne geçsin
+    updater.activate(data_dir)  # yt_dlp'yi ilk içe aktaran webapp'tan önce: indirilmiş sürüm öne geçsin (hemen döner)
     import webapp
     _patch_downloads()
     _backend = webapp.Backend()
     _backend.window = Window(native)
+    _backend.app_return_url = "soundapp://back"  # tarayıcıdaki giriş sayfasının "SOUND'a dön" düğmesi (AndroidManifest)
     _api = webapp.Api(_backend)
     _patch_login(native, _backend)
     _patch_update(native, data_dir)
@@ -252,6 +253,8 @@ def start(data_dir, native):
         original(state)
         native.playerState(json.dumps(state, ensure_ascii=False))
     _backend.player_state = player_state
+    # yt_dlp arayüz açılırken arka planda yüklenir; ilk arama/çalma onu beklemesin diye hemen başlıyor
+    threading.Thread(target=updater.warm, daemon=True, name="ytdlp-warm").start()
     threading.Timer(30, updater.verify).start()
     return mediaserver.start() + "/index.html"
 

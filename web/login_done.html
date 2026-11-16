@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SOUND</title>
+<!-- Giriş dönüş sayfası (Google / Spotify). webapp.login_page() yer tutucuları doldurur:
+     __CFG__ (JSON: ok, title, detail, flame, accent, calm, focus) ve __LOGO__ (data: adresi). -->
+<style>
+  :root { --accent: #8b5cf6; --bg: #09090c; --text: #f4f4f5; --muted: #a1a1aa; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(120% 90% at 50% 110%, #1a1020 0%, var(--bg) 60%) fixed, var(--bg);
+    color: var(--text); overflow: hidden;
+    font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  main {
+    position: relative; z-index: 1; height: 100%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 24px 16px 22vh; text-align: center; gap: 18px;
+  }
+  .logo {
+    width: min(320px, 70vw); height: auto;
+    filter: drop-shadow(0 0 18px color-mix(in srgb, var(--accent) 55%, transparent));
+    opacity: 0; transform: translateY(14px) scale(.96);
+    animation: rise .9s cubic-bezier(.2,.8,.2,1) .35s forwards, glow 3.2s ease-in-out 1.4s infinite;
+  }
+  .logo-tint {
+    aspect-ratio: 640 / 147;
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 55%, #fff), var(--accent) 55%,
+                color-mix(in srgb, var(--accent) 60%, #000));
+    -webkit-mask: var(--logo) center / contain no-repeat; mask: var(--logo) center / contain no-repeat;
+  }
+  h1 {
+    font-size: clamp(26px, 5vw, 40px); font-weight: 700; letter-spacing: -.01em;
+    opacity: 0; transform: translateY(12px);
+    animation: rise .8s cubic-bezier(.2,.8,.2,1) .7s forwards;
+  }
+  h1 .mark {
+    display: inline-grid; place-items: center; width: 1.15em; height: 1.15em; margin-right: .35em;
+    border-radius: 50%; background: var(--accent); color: #fff; font-size: .7em; vertical-align: .12em;
+    box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 70%, transparent);
+  }
+  body.fail h1 .mark { background: #ef4444; box-shadow: 0 0 22px rgba(239,68,68,.6); }
+  p.detail {
+    max-width: 460px; color: var(--muted); font-size: 16px; line-height: 1.5;
+    opacity: 0; animation: fade .8s ease .95s forwards;
+  }
+  button {
+    margin-top: 6px; border: 0; border-radius: 999px; padding: 13px 30px;
+    font-family: inherit; font-size: 16px; font-weight: 600; line-height: 1; color: #fff; cursor: pointer;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 85%, #fff), var(--accent));
+    box-shadow: 0 8px 30px color-mix(in srgb, var(--accent) 45%, transparent), inset 0 1px 0 rgba(255,255,255,.25);
+    opacity: 0; transform: translateY(10px);
+    animation: rise .7s cubic-bezier(.2,.8,.2,1) 1.15s forwards;
+    transition: filter .15s, transform .15s;
+  }
+  button:hover { filter: brightness(1.1); }
+  button:active { transform: scale(.97); }
+  button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+  .hint { color: var(--muted); font-size: 13px; opacity: 0; animation: fade .8s ease 1.4s forwards; }
+  [hidden] { display: none !important; }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+  @keyframes fade { to { opacity: 1; } }
+  @keyframes glow {
+    0%, 100% { filter: drop-shadow(0 0 14px color-mix(in srgb, var(--accent) 45%, transparent)); }
+    50% { filter: drop-shadow(0 0 28px color-mix(in srgb, var(--accent) 80%, transparent)); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .logo, h1, p.detail, button, .hint { animation: none !important; opacity: 1 !important; transform: none !important; }
+  }
+  body.calm .logo, body.calm h1, body.calm p.detail, body.calm button, body.calm .hint {
+    animation: none !important; opacity: 1 !important; transform: none !important;
+  }
+</style>
+</head>
+<body>
+<canvas id="fire" aria-hidden="true"></canvas>
+<main>
+  <img class="logo" src="__LOGO__" alt="SOUND">
+  <h1><span class="mark" id="mark">✓</span><span id="title"></span></h1>
+  <p class="detail" id="detail"></p>
+  <button id="back" type="button" hidden>SOUND'a dön</button>
+  <p class="hint" id="hint">Bu sekmeyi kapatabilirsin.</p>
+</main>
+<script>
+const CFG = __CFG__;
+const $ = id => document.getElementById(id);
+$("title").textContent = CFG.title;
+$("detail").textContent = CFG.detail;
+if (!CFG.ok) { document.body.classList.add("fail"); $("mark").textContent = "!"; }
+if (/^#[0-9a-f]{6}$/i.test(CFG.accent || "")) {
+  document.documentElement.style.setProperty("--accent", CFG.accent);
+  // uygulamadaki gibi: vurgu varsayılan mor değilse logo da o renge bürünür
+  if (CFG.accent.toLowerCase() !== "#8b5cf6") {
+    const img = document.querySelector(".logo"), tint = document.createElement("div");
+    tint.className = "logo logo-tint";
+    tint.setAttribute("role", "img"); tint.setAttribute("aria-label", "SOUND");
+    tint.style.setProperty("--logo", `url("${img.src}")`);
+    img.replaceWith(tint);
+  }
+}
+if (CFG.calm) document.body.classList.add("calm");
+
+// "SOUND'a dön": masaüstünde uygulama penceresini öne getirir (sunucudaki /focus).
+if (CFG.ok && CFG.focus) {
+  const back = $("back");
+  back.hidden = false;
+  back.addEventListener("click", async () => {
+    back.disabled = true;
+    try { await fetch("/focus", { method: "POST" }); } catch (e) {}
+    back.textContent = "SOUND açıldı";
+    try { window.close(); } catch (e) {}
+  });
+}
+
+/* ---------- alev: uygulamadaki çizimle aynı üç katman + kıvılcımlar ---------- */
+const WHITE = [255, 255, 255], BLACK = [0, 0, 0];
+const mix = (a, b, p) => a.map((v, i) => Math.round(v + (b[i] - v) * p));
+const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+const hex = c => "#" + c.map(v => v.toString(16).padStart(2, "0")).join("");
+const fromHex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const FIRE = {
+  l1: [[0, "rgba(124,58,237,.15)"], [0.25, "rgba(147,51,234,.6)"], [0.6, "rgba(236,72,153,.8)"], [1, "rgba(251,146,60,.9)"]],
+  l2: [[0, "rgba(244,114,182,.2)"], [0.4, "rgba(244,114,182,.7)"], [1, "rgba(253,186,116,.95)"]],
+  l3: [[0, "rgba(254,215,170,.3)"], [1, "rgba(255,251,235,1)"]],
+  sp: ["#fff7ed", "#fdba74", "#f472b6"],
+};
+const SETS = {
+  ice: [[37, 99, 235], [34, 211, 238], [186, 245, 253]],
+  gold: [[194, 65, 12], [245, 158, 11], [254, 240, 138]],
+  toxic: [[21, 128, 61], [132, 204, 22], [236, 252, 203]],
+  mono: [[82, 82, 91], [161, 161, 170], [244, 244, 245]],
+};
+function makeFlame([deep, mid, tip]) {
+  const mid2 = mix(mid, WHITE, 0.25), tip2 = mix(tip, WHITE, 0.4);
+  return {
+    l1: [[0, rgba(deep, 0.15)], [0.25, rgba(deep, 0.6)], [0.6, rgba(mid, 0.8)], [1, rgba(tip, 0.9)]],
+    l2: [[0, rgba(mid2, 0.2)], [0.4, rgba(mid2, 0.7)], [1, rgba(tip2, 0.95)]],
+    l3: [[0, rgba(tip2, 0.3)], [1, "rgba(255,255,255,1)"]],
+    sp: [hex(mix(tip, WHITE, 0.7)), hex(tip), hex(mid)],
+  };
+}
+function palette() {
+  if (!CFG.ok) return makeFlame([[127, 29, 29], [220, 38, 38], [253, 186, 116]]);  // hata: kızıl kor
+  if (CFG.flame === "accent" && /^#[0-9a-f]{6}$/i.test(CFG.accent || "")) {
+    const a = fromHex(CFG.accent);
+    return makeFlame([mix(a, BLACK, 0.3), a, mix(a, WHITE, 0.55)]);
+  }
+  return SETS[CFG.flame] ? makeFlame(SETS[CFG.flame]) : FIRE;
+}
+const pal = palette();
+
+const cv = $("fire"), ctx = cv.getContext("2d");
+let W = 0, H = 0, dpr = 1;
+const STEP = 14;
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+resize();
+addEventListener("resize", resize);
+
+// Pürüzsüz değer gürültüsü: her sütunun yüksekliği zamanla yavaşça dalgalanır, ani titreme yok.
+const seeds = Array.from({ length: 512 }, () => Math.random());
+const smooth = t => t * t * (3 - 2 * t);
+function noise(x) {
+  const i = Math.floor(x), f = x - i;
+  const a = seeds[i & 511], b = seeds[(i + 1) & 511];
+  return a + (b - a) * smooth(f);
+}
+const reduce = CFG.calm || matchMedia("(prefers-reduced-motion: reduce)").matches;
+const start = performance.now();
+const parts = [];
+let last = start;
+
+function heightAt(c, t, maxH) {
+  const n = noise(c * 0.18 + t * 0.55) * 0.55 + noise(c * 0.5 - t * 1.1 + 100) * 0.3 + noise(c * 1.3 + t * 2.2 + 200) * 0.15;
+  const edge = Math.min(1, Math.min(c, cols() - c) / 6);       // kenarlarda alçalır
+  const center = 0.75 + 0.25 * Math.cos(((c / cols()) - 0.5) * Math.PI);  // ortası biraz daha yüksek
+  return maxH * (0.25 + 0.75 * n) * (0.4 + 0.6 * edge) * center;
+}
+const cols = () => Math.ceil(W / STEP) + 1;
+
+function layer(hs, scale, stops, blur, y, maxH) {
+  const g = ctx.createLinearGradient(0, y - maxH * scale, 0, y + 1);
+  stops.forEach(([o, col]) => g.addColorStop(o, col));
+  ctx.fillStyle = g;
+  ctx.filter = blur ? `blur(${blur}px)` : "none";
+  ctx.beginPath();
+  ctx.moveTo(0, y + 1);
+  let px = 0, py = y - hs[0] * scale;
+  ctx.lineTo(px, py);
+  for (let c = 1; c < hs.length; c++) {
+    const x = c * STEP, yy = y - hs[c] * scale;
+    ctx.quadraticCurveTo(px, py, (px + x) / 2, (py + yy) / 2);
+    px = x; py = yy;
+  }
+  ctx.lineTo(W, py);
+  ctx.lineTo(W, y + 1);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function frame(now) {
+  const dt = Math.min(3, (now - last) / 16.67); last = now;
+  const t = (now - start) / 1000;
+  if (W !== innerWidth || H !== innerHeight) resize();
+  // tutuşma: ilk 1,4 sn alev sıfırdan yükselir, sonra sabit yanar
+  const ignite = reduce ? 1 : 1 - Math.pow(1 - Math.min(1, t / 1.4), 3);
+  const maxH = H * (CFG.ok ? 0.42 : 0.24) * ignite;
+  const y = H + 2;
+  ctx.clearRect(0, 0, W, H);
+
+  const n = cols(), hs = new Array(n);
+  for (let c = 0; c < n; c++) hs[c] = heightAt(c, reduce ? 0 : t, maxH);
+
+  // alevin arkasındaki sıcak ışık
+  const glow = ctx.createRadialGradient(W / 2, H, 0, W / 2, H, Math.max(W, H) * 0.7);
+  glow.addColorStop(0, pal.l1[2][1].replace(/[\d.]+\)$/, `${0.22 * ignite})`));
+  glow.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+
+  // Tam ekranda üç katman "lighter" ile üst üste binince dip beyaza patlıyor: iç katmanlar daha ince ve saydam.
+  ctx.globalCompositeOperation = "lighter";
+  layer(hs, 1, pal.l1, 8, y, maxH);
+  ctx.globalAlpha = 0.55;
+  layer(hs, 0.55, pal.l2, 5, y, maxH);
+  ctx.globalAlpha = 0.3;
+  layer(hs, 0.18, pal.l3, 3, y, maxH);
+  ctx.globalAlpha = 1;
+  ctx.filter = "none";
+
+  if (!reduce) {
+    // kıvılcımlar alevin tepesinden kopup süzülerek yükselir
+    const rate = (CFG.ok ? 0.9 : 0.35) * ignite * dt * (W / 900);
+    for (let k = 0; k < rate * 3; k++) {
+      if (Math.random() > rate) continue;
+      const c = Math.floor(Math.random() * n);
+      parts.push({ x: c * STEP, y: y - hs[c] * (0.5 + Math.random() * 0.5), vx: (Math.random() - 0.5) * 0.6,
+                   vy: -(0.6 + Math.random() * 1.6), life: 1, decay: 0.006 + Math.random() * 0.01, s: 1.2 + Math.random() * 1.6 });
+    }
+    for (let k = parts.length - 1; k >= 0; k--) {
+      const p = parts[k];
+      p.life -= p.decay * dt;
+      if (p.life <= 0 || p.y < -10) { parts.splice(k, 1); continue; }
+      p.x += (p.vx + Math.sin(now / 400 + k) * 0.35) * dt;
+      p.y += p.vy * dt;
+      ctx.globalAlpha = p.life;
+      ctx.fillStyle = pal.sp[p.life > 0.6 ? 0 : p.life > 0.3 ? 1 : 2];
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.s * p.life, 0, 7); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  ctx.globalCompositeOperation = "source-over";
+  if (!reduce || t < 0.05) requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+addEventListener("resize", () => { if (reduce) requestAnimationFrame(frame); });
+</script>
+</body>
+</html>

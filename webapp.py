@@ -84,6 +84,25 @@ def recycle(paths):
     return ctypes.windll.shell32.SHFileOperationW(ctypes.byref(operation)) == 0
 
 
+def login_page(ok, title, detail, ui=None, focus=False):
+    """Tarayıcıdaki giriş dönüş sayfası (web/login_done.html): uygulamanın alev paletiyle yanan alev,
+    logo, sonuç yazısı; focus=True ise "SOUND'a dön" düğmesi (sunucuda POST /focus)."""
+    import base64
+    ui = ui if isinstance(ui, dict) else {}
+    cfg = {"ok": bool(ok), "title": title, "detail": detail, "focus": bool(focus),
+           "flame": ui.get("flame") or "fire", "accent": ui.get("accent") or DEFAULT_ACCENT, "calm": bool(ui.get("calm"))}
+    try:
+        with open(os.path.join(mediaserver.WEB_DIR, "login_done.html"), encoding="utf-8") as f:
+            page = f.read()
+        with open(os.path.join(mediaserver.WEB_DIR, "login_logo.png"), "rb") as f:
+            logo = "data:image/png;base64," + base64.b64encode(f.read()).decode("ascii")
+    except OSError:
+        return (f"<meta charset='utf-8'><h2 style='font-family:sans-serif'>{title}</h2>").encode("utf-8")
+    # JSON'u <script> içine koyarken "</" kapanış etiketini bozmasın
+    data = json.dumps(cfg, ensure_ascii=False).replace("</", "<\\/")
+    return page.replace("__CFG__", data).replace("__LOGO__", logo).encode("utf-8")
+
+
 def plain_track(track):
     return {key: track.get(key) for key in ("id", "title", "artist", "duration", "thumbnail", "url")}
 
@@ -939,6 +958,7 @@ class Backend:
         from urllib.parse import parse_qs, urlparse
         result = {}
         done = threading.Event()
+        backend_ui = lambda: self.lib.settings.get("ui")
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
@@ -947,8 +967,9 @@ class Backend:
                 if urlparse(self.path).path == "/callback" and query.get("state", [None])[0] == state:
                     result.update({k: v[0] for k, v in query.items()})
                     done.set()
-                body = ("<h2 style='font-family:sans-serif'>" + ("Giriş tamam, SOUND aktarmaya başladı." if ok else
-                        "Giriş yapılamadı.") + "</h2>").encode("utf-8")
+                ui = backend_ui()
+                body = (login_page(True, "Giriş tamam", "SOUND şarkılarını aktarmaya başladı. Uygulamaya dönebilirsin.", ui)
+                        if ok else login_page(False, "Giriş yapılamadı", "Spotify girişi tamamlanmadı. SOUND'dan tekrar dene.", ui))
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.end_headers()
@@ -1010,29 +1031,41 @@ class Backend:
             return {"error": str(error)}
         backend = self
 
+        can_focus = os.name == "nt" and self.window is not None  # telefonda tarayıcıdan uygulamayı öne alamıyoruz
+
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
                 parsed = urlparse(self.path)
-                if parsed.path != "/auth/callback":
+                if parsed.path != "/auth/callback" or getattr(self.server, "answered", False):
                     self.send_response(404)
                     self.end_headers()
                     return
+                self.server.answered = True  # kod bir kez kullanılır; sayfa yenilenirse yeniden denenmez
                 query = {k: v[0] for k, v in parse_qs(parsed.query).items()}
                 if "code" in query:
                     result = backend.cloud_call(backend.cloud.finish_google, query["code"], verifier)
                 else:
                     result = {"error": query.get("error_description") or "Giriş iptal edildi."}
                 ok = "error" not in result
-                body = ("<meta charset='utf-8'><body style='font-family:sans-serif;background:#121212;color:#eee;"
-                        "display:grid;place-items:center;height:90vh'><h2>" +
-                        ("Giriş tamam, SOUND'a dönebilirsin." if ok else "Giriş yapılamadı: " + result["error"]) +
-                        "</h2></body>").encode("utf-8")
+                ui = backend.lib.settings.get("ui")
+                body = (login_page(True, "Giriş tamam", "SOUND hesabına bağlandın, kitaplığın eşitleniyor.", ui, can_focus)
+                        if ok else login_page(False, "Giriş yapılamadı", result["error"], ui))
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(body)
                 backend.push("cloud_login", result)
-                threading.Thread(target=backend._close_cloud_login, args=(self.server,), daemon=True).start()
+                # "SOUND'a dön" düğmesi için sunucu bir süre daha açık kalır
+                threading.Timer(120, backend._close_cloud_login, args=(self.server,)).start()
+
+            def do_POST(self):
+                if urlparse(self.path).path == "/focus" and can_focus:
+                    backend.focus_window()
+                    self.send_response(204)
+                else:
+                    self.send_response(404)
+                self.end_headers()
 
             def log_message(self, *args):
                 pass
@@ -1046,6 +1079,21 @@ class Backend:
         threading.Timer(600, self._close_cloud_login, args=(server,)).start()
         webbrowser.open(url)
         return {"ok": True}
+
+    def focus_window(self):
+        """Uygulama penceresini öne getirir (küçültülmüşse geri açar). Windows, arka plandaki bir sürecin
+        pencere öne almasını engeller; kısa bir Alt basışı bu kilidi açar."""
+        try:
+            hwnd = int(self.window.native.Handle.ToInt64())
+        except Exception:
+            return
+        user32 = ctypes.windll.user32
+        if user32.IsIconic(hwnd):
+            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+        user32.keybd_event(0x12, 0, 0, 0)  # VK_MENU basılı
+        user32.SetForegroundWindow(hwnd)
+        user32.keybd_event(0x12, 0, 2, 0)  # bırak
+        user32.BringWindowToTop(hwnd)
 
     def _close_cloud_login(self, server):
         if self.cloud_login is server:

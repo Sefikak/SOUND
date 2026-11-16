@@ -9,6 +9,19 @@ import time
 import uuid
 from datetime import datetime, timedelta
 
+class LazyModule:
+    """Modülü ilk kullanıldığı anda içe aktarır. Telefonda yt_dlp'nin yüklenmesi saniyeler sürüyor;
+    açılışta değil, ilk arama/çalmada (ya da arka plandaki ısınmada) yüklensin. Önbelleğe almaz:
+    telefondaki güncelleyici bozuk bir sürümü sys.modules'tan atıp yenisini yükleyebiliyor."""
+
+    def __init__(self, name):
+        self.__dict__["_name"] = name
+
+    def __getattr__(self, attr):
+        import importlib
+        return getattr(importlib.import_module(self.__dict__["_name"]), attr)
+
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 MUSIC_DIR = os.path.join(DATA_DIR, "music")

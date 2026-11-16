@@ -1,8 +1,9 @@
 <!doctype html>
-<html lang="tr">
+<html lang="tr" translate="no">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="google" content="notranslate">
 <title>SOUND</title>
 <!-- Giriş dönüş sayfası (Google / Spotify). webapp.login_page() yer tutucuları doldurur:
      __CFG__ (JSON: ok, title, detail, flame, accent, calm, focus) ve __LOGO__ (data: adresi). -->
@@ -105,10 +106,13 @@ if (/^#[0-9a-f]{6}$/i.test(CFG.accent || "")) {
 if (CFG.calm) document.body.classList.add("calm");
 
 // "SOUND'a dön": masaüstünde uygulama penceresini öne getirir (sunucudaki /focus).
-if (CFG.ok && CFG.focus) {
+// Telefonda (CFG.back = "soundapp://back") bağlantı açılır, Android uygulamayı öne getirir; hata sayfasında da durur.
+if ((CFG.ok && CFG.focus) || CFG.back) {
   const back = $("back");
   back.hidden = false;
+  if (!CFG.ok) back.textContent = "SOUND'a dön ve tekrar dene";
   back.addEventListener("click", async () => {
+    if (CFG.back) { location.href = CFG.back; return; }
     back.disabled = true;
     try { await fetch("/focus", { method: "POST" }); } catch (e) {}
     back.textContent = "SOUND açıldı";

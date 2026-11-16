@@ -26,8 +26,10 @@ CONFIG_FILE = os.path.join(BASE_DIR, "cloud_config.json")
 STATE_FILE = os.path.join(DATA_DIR, "cloud.json")
 CALLBACK_PORT = 43118
 CALLBACK_URL = f"http://127.0.0.1:{CALLBACK_PORT}/auth/callback"
-POLL_SECONDS = 30
+POLL_SECONDS = 30   # Realtime çalışmazsa yedek yoklama
 PUSH_DELAY = 1.5
+REALTIME_BEAT = 25  # Realtime sunucusu ~60 sn sessiz bağlantıyı kapatır
+REALTIME_OFF_RETRY = 600  # tablo Realtime yayınında değilse (schema.sql son blok) seyrek dene
 TRACK_META = ("id", "title", "artist", "duration", "thumbnail", "url")
 
 
@@ -106,6 +108,8 @@ class Cloud:
         self._push_timer = None
         self._applying = False
         self._thread = None
+        self._rt_thread = None
+        self.realtime = False  # Realtime'a bağlı ve kitaplık değişikliklerine abone
         self.syncing = False
         self.error = None
         self.last_sync = None
@@ -133,6 +137,7 @@ class Cloud:
             "syncing": self.syncing,
             "error": self.error,
             "last_sync": self.last_sync,
+            "realtime": self.realtime,
         }
 
     def _load_state(self):
@@ -303,6 +308,95 @@ class Cloud:
         if self._thread is None and self.configured:
             self._thread = threading.Thread(target=self._loop, daemon=True, name="cloud-sync")
             self._thread.start()
+        if self._rt_thread is None and self.configured:
+            self._rt_thread = threading.Thread(target=self._realtime_loop, daemon=True, name="cloud-realtime")
+            self._rt_thread.start()
+
+    # ---------- anında eşitleme (Supabase Realtime) ----------
+    # Sunucu başka bir cihazın yaptığı değişikliği bildirir; bildirimin içeriği kullanılmaz, yalnızca
+    # eşitleme hemen başlatılır (değişiklikleri her zamanki _pull getirir). Bağlantı yoksa 30 sn'lik
+    # yoklama zaten çalışıyor, yani Realtime yalnızca hızlandırır.
+
+    def _realtime_loop(self):
+        try:
+            import websocket
+        except ImportError:
+            return  # paket yoksa yalnızca yoklama
+        delay = 2
+        while True:
+            if not self.state.get("refresh_token"):
+                time.sleep(3)
+                continue
+            try:
+                self._realtime_session(websocket)
+                delay = 2
+            except _RealtimeOff as error:
+                _log_error("WS", "/realtime", error)
+                delay = REALTIME_OFF_RETRY
+            except Exception as error:  # ağ kesintisi, sunucu kapattı...
+                _log_error("WS", "/realtime", error)
+                delay = min(delay * 2, 120)
+            finally:
+                if self.realtime:
+                    self.realtime = False
+                    self._notify()
+            time.sleep(delay)
+
+    def _realtime_session(self, websocket):
+        token = self._token()
+        uid = self.user["id"]
+        query = urllib.parse.urlencode({"apikey": self.key, "vsn": "1.0.0"})
+        ws = websocket.create_connection(self.url.replace("https://", "wss://", 1) + "/realtime/v1/websocket?" + query,
+                                         timeout=15)
+        topic = "realtime:library-" + self.state["device"]
+        ref = 0
+
+        def send(event, payload, to=topic):
+            nonlocal ref
+            ref += 1
+            ws.send(json.dumps({"topic": to, "event": event, "payload": payload, "ref": str(ref)}))
+
+        try:
+            send("phx_join", {"config": {"broadcast": {"self": False}, "presence": {"key": ""},
+                                         "postgres_changes": [{"event": "*", "schema": "public", "table": "library_items",
+                                                               "filter": "user_id=eq." + uid}]},
+                              "access_token": token})
+            ws.settimeout(5)
+            beat = time.time()
+            while self.state.get("refresh_token") and (self.user or {}).get("id") == uid:
+                now = time.time()
+                if now - beat >= REALTIME_BEAT:
+                    send("heartbeat", {}, "phoenix")
+                    beat = now
+                    fresh = self._token()  # süresi bitmek üzereyse yenilenir; kanala yenisini ver
+                    if fresh != token:
+                        token = fresh
+                        send("access_token", {"access_token": token})
+                try:
+                    message = json.loads(ws.recv())
+                except websocket.WebSocketTimeoutException:
+                    continue
+                event, payload = message.get("event"), message.get("payload") or {}
+                if event == "system" and payload.get("extension") == "postgres_changes":
+                    if payload.get("status") != "ok":
+                        raise _RealtimeOff(payload.get("message") or "Realtime aboneliği reddedildi")
+                    if not self.realtime:
+                        self.realtime = True
+                        self._notify()
+                        self.sync_now()  # bağlantı yokken kaçan değişiklikler
+                elif event == "postgres_changes":
+                    record = (payload.get("data") or {}).get("record") or {}
+                    if record.get("device") != self.state.get("device"):  # kendi yazdığımızın yankısı değilse
+                        self.sync_now()
+                elif event == "phx_reply" and (payload.get("status") == "error"):
+                    raise CloudError(json.dumps(payload.get("response"))[:200])
+                elif event in ("phx_close", "phx_error"):
+                    raise CloudError("Realtime kanalı kapandı: " + event)
+        finally:
+            try:
+                ws.close()
+            except Exception:
+                pass
 
     def sync_now(self):
         self._wake.set()
@@ -457,6 +551,10 @@ class Cloud:
 
 class _Unauthorized(CloudError):
     pass
+
+
+class _RealtimeOff(CloudError):
+    """Tablo Realtime yayınında değil: sık deneme anlamsız."""
 
 
 def _parse_time(text):

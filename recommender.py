@@ -2,7 +2,9 @@
 from concurrent.futures import ThreadPoolExecutor
 from itertools import zip_longest
 
-import yt_dlp
+from library import LazyModule
+
+yt_dlp = LazyModule("yt_dlp")  # ilk kullanımda yüklenir (telefonda açılışı hızlandırır)
 
 from searcher import _norm, radio, remove_duplicates, search_albums, search_playlists, search_tracks, track_from_entry
 

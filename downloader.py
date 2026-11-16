@@ -7,7 +7,9 @@ import subprocess
 import threading
 import urllib.request
 
-import yt_dlp
+from library import LazyModule
+
+yt_dlp = LazyModule("yt_dlp")  # ilk kullanımda yüklenir (telefonda açılışı hızlandırır)
 from mutagen import File as MutagenFile
 from mutagen.flac import Picture
 from mutagen.id3 import APIC, ID3, ID3NoHeaderError, TIT2, TPE1, TXXX

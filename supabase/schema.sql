@@ -58,3 +58,10 @@ end $$;
 
 revoke all on function public.delete_my_account() from public, anon;
 grant execute on function public.delete_my_account() to authenticated;
+
+-- Anında eşitleme: başka cihazdaki değişiklik Realtime ile haber verilir (cloud.py _realtime).
+-- Satır güvenliği burada da geçerli: herkes yalnızca kendi satırlarının bildirimini alır.
+do $$ begin
+    alter publication supabase_realtime add table public.library_items;
+exception when duplicate_object then null;
+end $$;

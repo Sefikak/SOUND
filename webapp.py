@@ -84,12 +84,13 @@ def recycle(paths):
     return ctypes.windll.shell32.SHFileOperationW(ctypes.byref(operation)) == 0
 
 
-def login_page(ok, title, detail, ui=None, focus=False):
+def login_page(ok, title, detail, ui=None, focus=False, back=None):
     """Tarayıcıdaki giriş dönüş sayfası (web/login_done.html): uygulamanın alev paletiyle yanan alev,
-    logo, sonuç yazısı; focus=True ise "SOUND'a dön" düğmesi (sunucuda POST /focus)."""
+    logo, sonuç yazısı. "SOUND'a dön" düğmesi: focus=True ise masaüstünde POST /focus pencereyi öne alır,
+    back verilirse (telefonda "soundapp://back") o bağlantı açılır ve Android uygulamayı öne getirir."""
     import base64
     ui = ui if isinstance(ui, dict) else {}
-    cfg = {"ok": bool(ok), "title": title, "detail": detail, "focus": bool(focus),
+    cfg = {"ok": bool(ok), "title": title, "detail": detail, "focus": bool(focus), "back": back or None,
            "flame": ui.get("flame") or "fire", "accent": ui.get("accent") or DEFAULT_ACCENT, "calm": bool(ui.get("calm"))}
     try:
         with open(os.path.join(mediaserver.WEB_DIR, "login_done.html"), encoding="utf-8") as f:
@@ -112,6 +113,7 @@ class Backend:
         self.lib = Library()
         downloader.set_auth(self.lib.data.get("youtube_auth"))
         self.window = None
+        self.app_return_url = None  # telefonda android_main "soundapp://back" koyar (giriş sayfasındaki düğme)
         self.hwnd = None
         self.closing = False
         self.started = False
@@ -959,6 +961,7 @@ class Backend:
         result = {}
         done = threading.Event()
         backend_ui = lambda: self.lib.settings.get("ui")
+        backend_back = self.app_return_url
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
@@ -967,9 +970,9 @@ class Backend:
                 if urlparse(self.path).path == "/callback" and query.get("state", [None])[0] == state:
                     result.update({k: v[0] for k, v in query.items()})
                     done.set()
-                ui = backend_ui()
-                body = (login_page(True, "Giriş tamam", "SOUND şarkılarını aktarmaya başladı. Uygulamaya dönebilirsin.", ui)
-                        if ok else login_page(False, "Giriş yapılamadı", "Spotify girişi tamamlanmadı. SOUND'dan tekrar dene.", ui))
+                ui, back = backend_ui(), backend_back
+                body = (login_page(True, "Giriş tamam", "SOUND şarkılarını aktarmaya başladı. Uygulamaya dönebilirsin.", ui, back=back)
+                        if ok else login_page(False, "Giriş yapılamadı", "Spotify girişi tamamlanmadı. SOUND'dan tekrar dene.", ui, back=back))
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.end_headers()
@@ -1031,7 +1034,8 @@ class Backend:
             return {"error": str(error)}
         backend = self
 
-        can_focus = os.name == "nt" and self.window is not None  # telefonda tarayıcıdan uygulamayı öne alamıyoruz
+        can_focus = os.name == "nt" and self.window is not None
+        back = self.app_return_url  # telefonda: uygulamayı öne getiren bağlantı
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
@@ -1048,8 +1052,8 @@ class Backend:
                     result = {"error": query.get("error_description") or "Giriş iptal edildi."}
                 ok = "error" not in result
                 ui = backend.lib.settings.get("ui")
-                body = (login_page(True, "Giriş tamam", "SOUND hesabına bağlandın, kitaplığın eşitleniyor.", ui, can_focus)
-                        if ok else login_page(False, "Giriş yapılamadı", result["error"], ui))
+                body = (login_page(True, "Giriş tamam", "SOUND hesabına bağlandın, kitaplığın eşitleniyor.", ui, can_focus, back)
+                        if ok else login_page(False, "Giriş yapılamadı", result["error"], ui, back=back))
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Cache-Control", "no-store")

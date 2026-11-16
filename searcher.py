@@ -1,7 +1,9 @@
 import re
 import urllib.parse
 
-import yt_dlp
+from library import LazyModule
+
+yt_dlp = LazyModule("yt_dlp")  # ilk kullanımda yüklenir (telefonda açılışı hızlandırır)
 
 PLAYLIST_FILTER = "EgIQAw%253D%253D"  # YouTube aramasında "yalnızca oynatma listeleri"
 

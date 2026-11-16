@@ -1,16 +1,22 @@
 yt-dlp
-pygame
 Pillow
 imageio-ffmpeg
 mutagen
 deno
 yt-dlp-ejs
-winrt-runtime
-winrt-Windows.Media
-winrt-Windows.Media.Playback
-winrt-Windows.Foundation
-winrt-Windows.Storage.Streams
-winrt-Windows.Storage
 pywebview
 ytmusicapi
 websocket-client
+# Windows: medya tuşları (SMTC), eski arayüzden kalan pygame
+pygame; sys_platform == "win32"
+winrt-runtime; sys_platform == "win32"
+winrt-Windows.Media; sys_platform == "win32"
+winrt-Windows.Media.Playback; sys_platform == "win32"
+winrt-Windows.Foundation; sys_platform == "win32"
+winrt-Windows.Storage.Streams; sys_platform == "win32"
+winrt-Windows.Storage; sys_platform == "win32"
+# Linux: pencere Qt WebEngine ile (Edge WebView2 ile aynı Chromium motoru), medya tuşları MPRIS (D-Bus)
+PyQt6; sys_platform == "linux"
+PyQt6-WebEngine; sys_platform == "linux"
+qtpy; sys_platform == "linux"
+dbus-next; sys_platform == "linux"

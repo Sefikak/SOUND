@@ -1,3 +1,4 @@
 # Windows betikleri olduğu gibi (CRLF) saklansın; GitHub'dan indirilen .bat da düzgün çalışsın
 *.bat -text
 *.vbs -text
+*.sh text eol=lf

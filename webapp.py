@@ -9,6 +9,7 @@ import json
 import os
 import queue
 import shutil
+import sys
 import threading
 import time
 import webbrowser
@@ -17,8 +18,10 @@ from concurrent.futures import ThreadPoolExecutor
 # Sonraki şarkıya kendiliğinden geçerken tarayıcının "önce kullanıcı tıklasın" kuralı engel olmasın
 # Tarayıcı motorunun kendi medya oturumunu kapat: yoksa Windows iki oturum görür, kulaklık / klavye medya
 # tuşları SOUND yerine motorun oturumuna gidip kaybolur (mediakeys.py tek yetkili oturum olsun)
-os.environ.setdefault("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
-                      "--autoplay-policy=no-user-gesture-required --disable-features=HardwareMediaKeyHandling,MediaSessionService")
+BROWSER_FLAGS = "--autoplay-policy=no-user-gesture-required --disable-features=HardwareMediaKeyHandling,MediaSessionService"
+os.environ.setdefault("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", BROWSER_FLAGS)  # Windows (Edge WebView2)
+os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", BROWSER_FLAGS)  # Linux (Qt WebEngine; medya tuşları mpris.py'de)
+IS_WINDOWS = os.name == "nt"
 
 import webview
 
@@ -29,7 +32,10 @@ import mediakeys
 import mediaserver
 import selfupdate
 import updater
-import wintaskbar
+if IS_WINDOWS:
+    import wintaskbar
+else:
+    wintaskbar = None  # görev çubuğu düğmeleri yalnızca Windows'ta
 from library import DATA_DIR, Library
 import importer
 from recommender import build_home, mix_for
@@ -41,6 +47,7 @@ APP_ID = "SOUND.MusicPlayer"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSETS = os.path.join(BASE_DIR, "assets")
 ICON = os.path.join(ASSETS, "icon.ico")
+ICON_PNG = os.path.join(ASSETS, "icon.png")  # Linux pencere / uygulama menüsü ikonu
 DEFAULT_ACCENT = "#8b5cf6"
 SESSION_FILE = os.path.join(DATA_DIR, "session.json")
 HOME_REFRESH_AFTER = 3 * 3600
@@ -70,9 +77,15 @@ def friendly_error(error):
 
 
 def recycle(paths):
-    """Dosyaları kalıcı silmek yerine Geri Dönüşüm Kutusu'na taşı (geri alınabilsin)."""
+    """Dosyaları kalıcı silmek yerine Geri Dönüşüm Kutusu'na (Linux'ta çöp kutusuna) taşı (geri alınabilsin)."""
     if not paths:
         return True
+    if not IS_WINDOWS:
+        import subprocess
+        try:
+            return subprocess.run(["gio", "trash", "--", *paths], capture_output=True, timeout=60).returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            return False  # gio yoksa dosyalar yerinde kalır (kalıcı silmektense)
     from ctypes import wintypes
 
     class SHFILEOPSTRUCTW(ctypes.Structure):
@@ -83,6 +96,16 @@ def recycle(paths):
     operation = SHFILEOPSTRUCTW(wFunc=FO_DELETE, pFrom="\0".join(paths) + "\0\0",
                                 fFlags=FOF_SILENT | FOF_NOCONFIRMATION | FOF_ALLOWUNDO | FOF_NOERRORUI)
     return ctypes.windll.shell32.SHFileOperationW(ctypes.byref(operation)) == 0
+
+
+def open_path(path):
+    """Dosyayı/klasörü sistemin varsayılan uygulamasıyla açar."""
+    if IS_WINDOWS:
+        os.startfile(path)
+    else:
+        import subprocess
+        subprocess.Popen(["xdg-open", path], start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def login_page(ok, title, detail, ui=None, focus=False, back=None):
@@ -219,6 +242,9 @@ class Backend:
     # ---------- pencere ----------
 
     def on_shown(self):
+        if not IS_WINDOWS:
+            self.media_thread.submit(self._setup_media)  # Linux: MPRIS medya kontrolleri
+            return
         hwnd = None
         try:
             hwnd = int(self.window.native.Handle.ToInt64())
@@ -285,7 +311,11 @@ class Backend:
         self.media_thread.submit(self._setup_media)
 
     def _setup_media(self):
-        self.media = mediakeys.create(lambda job: job(), lambda action: self.push("command", action))
+        if IS_WINDOWS:
+            self.media = mediakeys.create(lambda job: job(), lambda action: self.push("command", action))
+        else:
+            import mpris
+            self.media = mpris.create(lambda action: self.push("command", action), self.focus_window)
 
     def _thumbbar_click(self, button_id):
         bar = wintaskbar.ThumbBar
@@ -1088,7 +1118,7 @@ class Backend:
             return {"error": str(error)}
         backend = self
 
-        can_focus = os.name == "nt" and self.window is not None
+        can_focus = self.window is not None and (IS_WINDOWS or sys.platform.startswith("linux"))
         back = self.app_return_url  # telefonda: uygulamayı öne getiren bağlantı
 
         class Handler(BaseHTTPRequestHandler):
@@ -1141,6 +1171,13 @@ class Backend:
     def focus_window(self):
         """Uygulama penceresini öne getirir (küçültülmüşse geri açar). Windows, arka plandaki bir sürecin
         pencere öne almasını engeller; kısa bir Alt basışı bu kilidi açar."""
+        if not IS_WINDOWS:
+            try:
+                self.window.restore()
+                self.window.show()
+            except Exception:
+                pass
+            return
         try:
             hwnd = int(self.window.native.Handle.ToInt64())
         except Exception:
@@ -1427,14 +1464,14 @@ class Api:
     def open_video(self, track_id):
         path = self._b.lib.video_path(track_id)
         if path:
-            os.startfile(path)
+            open_path(path)
 
     def open_url(self, url):
         if url.startswith("https://"):
             webbrowser.open(url)
 
     def open_music_folder(self):
-        os.startfile(os.path.join(DATA_DIR, "music"))
+        open_path(os.path.join(DATA_DIR, "music"))
 
     # YouTube hesabı
     def auth_status(self):
@@ -1497,5 +1534,19 @@ def run():
     window.events.resized += backend.on_resized
     window.events.maximized += lambda: backend.geometry.update(maximized=True)
     window.events.restored += lambda: backend.geometry.update(maximized=False)
-    webview.start(private_mode=False, storage_path=os.path.join(DATA_DIR, "webview"))
+    options = {}
+    if not IS_WINDOWS:
+        # Linux: Qt WebEngine (Edge WebView2 ile aynı Chromium motoru). Arayüz boyutu canlı değişemiyor
+        # (set_zoom yalnızca Windows'ta); kayıtlı boyut açılışta Qt ölçeğiyle uygulanır.
+        zoom = ((backend.lib.settings.get("ui") or {}).get("zoom") or 100) / 100
+        if abs(zoom - 1) > 0.01:
+            os.environ.setdefault("QT_SCALE_FACTOR", f"{zoom:.2f}")
+        try:  # görev çubuğu / Wayland pencereyi sound.desktop ile (ikon, ad) eşleştirsin (install.sh)
+            from qtpy.QtGui import QGuiApplication
+            QGuiApplication.setDesktopFileName("sound")
+            QGuiApplication.setApplicationName("SOUND")
+        except Exception:
+            pass
+        options = {"gui": "qt", "icon": ICON_PNG}
+    webview.start(private_mode=False, storage_path=os.path.join(DATA_DIR, "webview"), **options)
     backend.save_session()

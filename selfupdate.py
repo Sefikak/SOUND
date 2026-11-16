@@ -86,5 +86,9 @@ def restart():
         launch = f"subprocess.Popen(['wscript.exe', {vbs!r}], cwd={BASE_DIR!r})"
     else:
         launch = f"subprocess.Popen([{sys.executable!r}, {os.path.join(BASE_DIR, 'main.py')!r}], cwd={BASE_DIR!r})"
-    subprocess.Popen([sys.executable, "-c", f"import subprocess, time; time.sleep(2.5); {launch}"],
-                     cwd=BASE_DIR, creationflags=NO_WINDOW | 0x00000008)  # DETACHED_PROCESS
+    if os.name == "nt":
+        subprocess.Popen([sys.executable, "-c", f"import subprocess, time; time.sleep(2.5); {launch}"],
+                         cwd=BASE_DIR, creationflags=NO_WINDOW | 0x00000008)  # DETACHED_PROCESS
+    else:  # Linux/macOS: creationflags yok; yeni oturumda başlasın ki eski süreç kapanınca ölmesin
+        subprocess.Popen([sys.executable, "-c", f"import subprocess, time; time.sleep(2.5); {launch}"],
+                         cwd=BASE_DIR, start_new_session=True)

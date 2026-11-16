@@ -260,7 +260,8 @@ function cloudLine(c) {
   if (c.syncing) return "Eşitleniyor…";
   if (!c.last_sync) return "Eşitleme bekleniyor";
   const s = Math.round(Date.now() / 1000 - c.last_sync);
-  return "Eşitlendi · " + (s < 60 ? "az önce" : s < 3600 ? Math.round(s / 60) + " dk önce" : new Date(c.last_sync * 1000).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }));
+  return "Eşitlendi · " + (s < 60 ? "az önce" : s < 3600 ? Math.round(s / 60) + " dk önce" : new Date(c.last_sync * 1000).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }))
+    + (c.realtime ? " · anında" : "");  // Realtime bağlıysa diğer cihazların değişikliği hemen gelir
 }
 function cloudChanged(status) {
   S.cloud = status;
@@ -365,6 +366,7 @@ async function openSettings() {
         <div class="set-row"><div><b>İstatistikler</b><p>Dinleme süren, en çok dinlediğin şarkılar ve sanatçılar.</p></div><button class="pill" data-x="stats">Aç</button></div>
         <div class="set-sec">Kişiselleştir</div>
         <div class="set-row"><div><b>Görünüm ve yerleşim</b><p>Renkler, alev, boyut, kenar çubuğunun ve düğmelerin yeri.</p></div><button class="pill" data-x="customize">Kişiselleştir</button></div>
+        ${document.documentElement.classList.contains("mobile") ? "" : `<div class="set-row"><div><b>Klavye kısayolları</b><p>Çal/duraklat, şarkı geçme, ses, sarma ve diğerleri için tuşları kendin seç.</p></div><button class="pill" data-x="shortcuts">Düzenle</button></div>`}
         <div class="set-sec">Çalma</div>
         <div class="set-row"><div><b>Ekolayzır ve ses dengeleme</b><p>Sesi kendine göre ayarla; şarkılar arasındaki ses farkını gider.</p></div><button class="pill" data-x="audioFx">Aç</button></div>
         <div class="set-row"><div><b>Boşluksuz geçiş</b><p>Sıradaki şarkı önceden yüklenir, şarkılar arasında sessizlik olmaz.</p></div>${toggleHTML("gapless", s.gapless)}</div>
@@ -403,6 +405,7 @@ async function openSettings() {
       else if (x === "account") { done(null); openAccount(); }
       else if (x === "cloud") { done(null); openCloud(); }
       else if (x === "customize") { done(null); openCustomize(); }
+      else if (x === "shortcuts") { done(null); openShortcuts(); }
       else if (x === "audioFx") { done(null); openAudioFx(); }
       else if (x === "stats") { done(null); openPage("stats"); }
       else if (x === "restart") api.restart_app();
@@ -2719,19 +2722,114 @@ function restoreSession(s) {
   if (s.panel) togglePanel(true);
 }
 
-/* ---------- klavye ve üst çubuk ---------- */
+/* ---------- klavye kısayolları (Ayarlar > Kişiselleştir > Klavye kısayolları) ---------- */
+// [kimlik, ad, varsayılan tuş]. Tuşlar fiziksel konuma göre (e.code) tutulur: klavye dili değişse de aynı tuş.
+const SHORTCUTS = [
+  ["playPause", "Çal / duraklat", "Space"],
+  ["next", "Sonraki şarkı", "Ctrl+ArrowRight"],
+  ["previous", "Önceki şarkı", "Ctrl+ArrowLeft"],
+  ["seekFwd", "10 sn ileri sar", "Shift+ArrowRight"],
+  ["seekBack", "10 sn geri sar", "Shift+ArrowLeft"],
+  ["volUp", "Sesi aç", "Ctrl+ArrowUp"],
+  ["volDown", "Sesi kıs", "Ctrl+ArrowDown"],
+  ["mute", "Sessize al / aç", "M"],
+  ["fav", "Çalan şarkıyı beğen", "L"],
+  ["shuffle", "Karışık çal", "S"],
+  ["repeat", "Tekrarla", "R"],
+  ["panel", "Şimdi çalıyor paneli", "P"],
+  ["search", "Ara", "Ctrl+F"],
+  ["undo", "Geri al", "Ctrl+Z"],
+  ["back", "Önceki sayfa", "Alt+ArrowLeft"],
+  ["forward", "Sonraki sayfa", "Alt+ArrowRight"],
+];
+const seekBy = s => { if (A.src && isFinite(A.duration)) A.currentTime = Math.max(0, Math.min(A.duration - 0.5, A.currentTime + s)); };
+const nudgeVolume = d => { muted = null; setVolume(Math.round(Math.max(0, Math.min(1, volPos + d)) * 100) / 100); };
+const SHORTCUT_RUN = {
+  playPause: () => P.toggle(), next: () => P.next(), previous: () => P.previous(),
+  seekFwd: () => seekBy(10), seekBack: () => seekBy(-10),
+  volUp: () => nudgeVolume(0.05), volDown: () => nudgeVolume(-0.05), mute: () => $("#muteBtn").click(),
+  fav: () => { if (P.current) ACT.favCurrent(); }, shuffle: () => P.toggleShuffle(), repeat: () => P.cycleRepeat(),
+  panel: () => togglePanel(), search: () => ACT.focusSearch(), undo: () => undo(),
+  back: () => goBack(), forward: () => goForward(),
+};
+const HOLDABLE = new Set(["seekFwd", "seekBack", "volUp", "volDown"]);  // basılı tutunca tekrarlananlar
+function comboOf(e) {
+  const c = e.code;
+  if (!c || /^(Control|Shift|Alt|Meta|OS)/.test(c)) return null;
+  const key = c.startsWith("Key") ? c.slice(3) : c.startsWith("Digit") ? c.slice(5) : c;
+  return [e.ctrlKey && "Ctrl", e.altKey && "Alt", e.shiftKey && "Shift", e.metaKey && "Win", key].filter(Boolean).join("+");
+}
+const KEY_NAMES = { Space: "Boşluk", ArrowRight: "→", ArrowLeft: "←", ArrowUp: "↑", ArrowDown: "↓", Enter: "Enter",
+  Backspace: "⌫", Delete: "Del", PageUp: "PgUp", PageDown: "PgDn", Comma: ",", Period: ".", Slash: "/", Minus: "-",
+  Equal: "=", BracketLeft: "[", BracketRight: "]", Semicolon: ";", Quote: "'", Backslash: "\\", Backquote: "`" };
+const keyChips = combo => combo
+  ? combo.split("+").map(k => `<kbd>${esc(KEY_NAMES[k] || k.replace(/^Numpad/, "Num "))}</kbd>`).join("")
+  : `<span class="muted">Yok</span>`;
+function shortcutMap() {
+  const user = S.settings.shortcuts || {};
+  return Object.fromEntries(SHORTCUTS.map(([id, , def]) => [id, id in user ? user[id] : def]));
+}
+let capturingShortcut = false;
 document.addEventListener("keydown", e => {
-  const typing = e.target.closest?.("input, textarea");
-  if (e.ctrlKey && e.key.toLowerCase() === "f") { e.preventDefault(); ACT.focusSearch(); return; }
+  if (capturingShortcut) return;
+  const combo = comboOf(e), map = shortcutMap();
+  const id = combo && Object.keys(map).find(k => map[k] === combo);
+  const typing = e.target.closest?.("input, textarea, select");
+  if (id === "search") { e.preventDefault(); SHORTCUT_RUN.search(); return; }  // yazarken de çalışır
   if (typing || $("#modal")) return;
-  if (e.code === "Space") { e.preventDefault(); P.toggle(); }
-  else if (e.ctrlKey && e.key === "ArrowRight") P.next();
-  else if (e.ctrlKey && e.key === "ArrowLeft") P.previous();
-  else if (e.ctrlKey && e.key.toLowerCase() === "z") { e.preventDefault(); undo(); }
-  else if (e.altKey && e.key === "ArrowLeft") goBack();
-  else if (e.altKey && e.key === "ArrowRight") goForward();
-  else if (e.key === "Escape") closeMenus();
+  if (e.key === "Escape") { closeMenus(); return; }
+  if (!id || (e.repeat && !HOLDABLE.has(id))) return;
+  e.preventDefault();
+  SHORTCUT_RUN[id]();
 });
+
+async function openShortcuts() {
+  let user = { ...(S.settings.shortcuts || {}) }, waiting = null, note = "", cleanup = () => {};
+  const save = async () => { S.settings = (await api.update_settings({ shortcuts: user })).settings; };
+  const current = id => (id in user ? user[id] : SHORTCUTS.find(s => s[0] === id)[2]);
+  await modal(`<h3>Klavye kısayolları</h3><p style="margin-bottom:0">Değiştirmek istediğin kısayola tıkla, sonra yeni tuşa bas.
+      <b>Esc</b> vazgeçer, <b>⌫</b> kısayolu kaldırır.</p><div id="scBody"></div>
+    <div class="row-btns" style="margin-top:18px"><button class="textbtn" data-x="reset">Varsayılana dön</button><button class="pill fill" data-x="close">Bitti</button></div>`,
+    (box, done) => {
+      const draw = () => {
+        $("#scBody", box).innerHTML = (note ? `<p class="sc-note">${esc(note)}</p>` : "") + SHORTCUTS.map(([id, label]) =>
+          `<div class="set-row"><div><b>${label}</b></div><button class="sc-key ${waiting === id ? "wait" : ""}" data-sc="${id}">${
+            waiting === id ? "Bir tuşa bas…" : keyChips(current(id))}</button></div>`).join("");
+      };
+      const stop = () => { waiting = null; capturingShortcut = false; window.removeEventListener("keydown", capture, true); };
+      cleanup = stop;
+      // Pencerenin Esc ile kapanmasından ve genel kısayollardan önce yakalanır
+      const capture = e => {
+        e.preventDefault(); e.stopImmediatePropagation();
+        const id = waiting, combo = comboOf(e);
+        if (e.key === "Escape") { stop(); return draw(); }
+        if (!combo) return;  // yalnızca Ctrl/Shift/Alt basıldı: asıl tuşu bekle
+        if (combo === "Backspace" || combo === "Delete") { user[id] = ""; note = ""; }
+        else if (combo === "Tab" || combo === "Shift+Tab") { note = "Tab tuşu pencereler arasında gezinmek için ayrılmış."; stop(); return draw(); }
+        else {
+          const other = SHORTCUTS.find(([o]) => o !== id && current(o) === combo);
+          if (other) { user[other[0]] = ""; note = `“${other[1]}” bu tuşu kullanıyordu; onun kısayolu kaldırıldı.`; }
+          else note = "";
+          user[id] = combo;
+        }
+        stop(); draw(); save();
+      };
+      box.addEventListener("click", e => {
+        const key = e.target.closest("[data-sc]");
+        if (key) {
+          if (waiting) stop();
+          waiting = key.dataset.sc; capturingShortcut = true;
+          window.addEventListener("keydown", capture, true);
+          return draw();
+        }
+        const x = e.target.closest("[data-x]")?.dataset.x;
+        if (x === "close") { stop(); done(null); }
+        else if (x === "reset") { stop(); user = {}; note = "Bütün kısayollar varsayılana döndü."; draw(); save(); }
+      });
+      draw();
+    });
+  cleanup();  // pencere nasıl kapanırsa kapansın tuş yakalama bitsin
+}
 document.addEventListener("mouseup", e => { if (e.button === 3) goBack(); if (e.button === 4) goForward(); });
 const searchInput = $("#searchInput");
 searchInput.addEventListener("keydown", e => { if (e.key === "Enter") { doSearch(searchInput.value); searchInput.blur(); } if (e.key === "Escape") searchInput.blur(); });

@@ -623,3 +623,17 @@ body.tint-logo .brand .logo-tint { display: block; }
 /* ana sayfa: kullanıcı aşağıdayken gelen yeni öneriler */
 #homeFresh { position: sticky; top: var(--fresh-top, 84px); height: 0; z-index: 20; display: flex; justify-content: center; pointer-events: none; }
 #homeFresh .pill { pointer-events: auto; box-shadow: 0 6px 20px rgba(0,0,0,.45); animation: enter .22s var(--ease); }
+
+/* ---------- klavye kısayolları (openShortcuts) ---------- */
+.sc-key { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 112px; height: 34px;
+  padding: 0 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface2); color: var(--text);
+  font: inherit; font-size: 13px; cursor: pointer; transition: border-color .15s, background .15s; }
+.sc-key:hover { border-color: var(--sub); }
+.sc-key.wait { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--surface2)); color: var(--accent-light);
+  animation: scPulse 1.2s ease-in-out infinite; }
+.sc-key kbd { font: inherit; font-size: 12px; font-weight: 600; min-width: 22px; text-align: center; padding: 3px 7px;
+  border-radius: 5px; background: var(--hover); box-shadow: inset 0 -2px 0 #0006; }
+.sc-note { margin: 10px 0 0; padding: 8px 12px; border-radius: 8px; font-size: 13px; color: var(--sub);
+  background: color-mix(in srgb, var(--accent) 12%, transparent); }
+#scBody .set-row { padding: 6px 0; }
+@keyframes scPulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); } }

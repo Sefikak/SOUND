@@ -98,14 +98,50 @@ def recycle(paths):
     return ctypes.windll.shell32.SHFileOperationW(ctypes.byref(operation)) == 0
 
 
+IS_WSL = not IS_WINDOWS and bool(os.environ.get("WSL_DISTRO_NAME") or os.environ.get("WSL_INTEROP"))
+
+
+def _windows_open(target, url=False):
+    """WSL'de: Windows tarafının varsayılan uygulamasıyla açar (Linux'ta tarayıcı/dosya yöneticisi yok).
+    Bağlantılar rundll32 url.dll ile: explorer.exe ?/& içeren uzun adresi tanımayıp Belgeler'i açıyor."""
+    import subprocess
+    command = ["rundll32.exe", "url.dll,FileProtocolHandler", target] if url else ["explorer.exe", target]
+    try:
+        # Windows programı Linux klasöründe başlarsa UNC yolu uyarısı verir; /mnt/c'den başlat
+        subprocess.Popen(command, start_new_session=True, cwd="/mnt/c" if os.path.isdir("/mnt/c") else None,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except OSError:
+        return False
+
+
 def open_path(path):
     """Dosyayı/klasörü sistemin varsayılan uygulamasıyla açar."""
     if IS_WINDOWS:
         os.startfile(path)
-    else:
-        import subprocess
-        subprocess.Popen(["xdg-open", path], start_new_session=True,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return
+    import subprocess
+    if IS_WSL:
+        try:
+            windows_path = subprocess.run(["wslpath", "-w", path], capture_output=True, text=True,
+                                          timeout=10).stdout.strip()
+            if windows_path and _windows_open(windows_path):
+                return
+        except (OSError, subprocess.SubprocessError):
+            pass
+    subprocess.Popen(["xdg-open", path], start_new_session=True,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def open_browser(url):
+    """Bağlantıyı varsayılan tarayıcıda açar; açılamadıysa False."""
+    if IS_WSL and _windows_open(url, url=True):
+        return True
+    try:
+        # Android'de webbrowser yerine native.openUrl konuyor ve None döndürüyor: yalnızca açık False başarısızlık
+        return webbrowser.open(url) is not False
+    except Exception:
+        return False
 
 
 def login_page(ok, title, detail, ui=None, focus=False, back=None):
@@ -1108,10 +1144,10 @@ class Backend:
             return {"error": "SOUND hesabı henüz yapılandırılmadı."}
         from http.server import BaseHTTPRequestHandler, HTTPServer
         from urllib.parse import parse_qs, urlparse
-        if self.cloud_login:
-            self.cloud_login.shutdown()
-            self.cloud_login.server_close()
-            self.cloud_login = None
+        old, self.cloud_login = self.cloud_login, None  # düğmeye art arda basılırsa iki çağrı aynı sunucuyu kapatmasın
+        if old:
+            old.shutdown()
+            old.server_close()
         try:
             url, verifier = self.cloud.google_url()
         except cloud.CloudError as error:
@@ -1165,7 +1201,9 @@ class Backend:
         self.cloud_login = server
         threading.Thread(target=server.serve_forever, daemon=True).start()
         threading.Timer(600, self._close_cloud_login, args=(server,)).start()
-        webbrowser.open(url)
+        if not open_browser(url):
+            self._close_cloud_login(server)
+            return {"error": "Tarayıcı açılamadı. Sistemde varsayılan bir tarayıcı ayarlı olmalı."}
         return {"ok": True}
 
     def focus_window(self):
@@ -1468,7 +1506,7 @@ class Api:
 
     def open_url(self, url):
         if url.startswith("https://"):
-            webbrowser.open(url)
+            open_browser(url)
 
     def open_music_folder(self):
         open_path(os.path.join(DATA_DIR, "music"))

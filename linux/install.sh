@@ -29,23 +29,31 @@ case "$(uname -m)" in
 esac
 
 say "Sistem paketleri denetleniyor"
-# git, python3 + venv; Qt6 penceresi için libxcb-cursor, nss, xkbcommon-x11, egl; çöp kutusu için gio
+# git, python3 + venv; Qt6 WebEngine penceresi için xcb, nss, alsa, xkbfile, egl; çöp kutusu için gio
 need_sys=0
 has git || need_sys=1
 has python3 || need_sys=1
 python3 -c 'import venv, ensurepip' >/dev/null 2>&1 || need_sys=1
-{ ldconfig -p 2>/dev/null | grep -q 'libxcb-cursor\.so'; } || need_sys=1
+for lib in libxcb-cursor.so.0 libxcb-icccm.so.4 libxcb-keysyms.so.1 libxcb-shape.so.0 libnss3.so libasound.so.2 libxkbfile.so.1; do
+    ldconfig -p 2>/dev/null | grep -qF "$lib" || need_sys=1
+done
 if [ "$need_sys" = 1 ]; then
     if has apt-get; then
         sudo apt-get update
-        sudo apt-get install -y git python3 python3-venv python3-pip libxcb-cursor0 libnss3 libxkbcommon-x11-0 \
-            libegl1 libgl1 libglib2.0-bin
+        # Ubuntu 24.04+ / Debian 13'te ALSA paketinin adı libasound2t64
+        asound=libasound2; apt-cache show libasound2t64 >/dev/null 2>&1 && asound=libasound2t64
+        sudo apt-get install -y git python3 python3-venv python3-pip libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 \
+            libxcb-shape0 libxcb-randr0 libxcb-render-util0 libxcb-image0 libxcb-xkb1 libnss3 libxkbcommon-x11-0 \
+            "$asound" libxkbfile1 libxcomposite1 libxdamage1 libxrandr2 libxtst6 libgbm1 libegl1 libgl1 libglib2.0-bin
     elif has dnf; then
-        sudo dnf install -y git python3 xcb-util-cursor nss libxkbcommon-x11 mesa-libEGL glib2
+        sudo dnf install -y git python3 xcb-util-cursor xcb-util-wm xcb-util-keysyms xcb-util-image xcb-util-renderutil \
+            nss alsa-lib libxkbfile libxkbcommon-x11 mesa-libEGL mesa-libgbm glib2
     elif has pacman; then
-        sudo pacman -S --needed --noconfirm git python xcb-util-cursor nss libxkbcommon-x11 libglvnd glib2
+        sudo pacman -S --needed --noconfirm git python xcb-util-cursor xcb-util-wm xcb-util-keysyms xcb-util-image \
+            xcb-util-renderutil nss alsa-lib libxkbfile libxkbcommon-x11 libglvnd mesa glib2
     elif has zypper; then
-        sudo zypper install -y git python3 libxcb-cursor0 mozilla-nss libxkbcommon-x11-0 Mesa-libEGL1 glib2-tools
+        sudo zypper install -y git python3 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-image0 \
+            libxcb-render-util0 mozilla-nss libasound2 libxkbfile1 libxkbcommon-x11-0 Mesa-libEGL1 libgbm1 glib2-tools
     else
         fail "Paket yöneticin tanınmadı. git, python3 (venv ile) ve libxcb-cursor kurup tekrar çalıştır."
     fi

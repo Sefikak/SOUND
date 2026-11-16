@@ -1,11 +1,13 @@
 {
-  "versionCode": 9,
-  "versionName": "0.1.8",
-  "sha256": "48d083c84a5558293239017f5f04d115fdbead411eccb8b5a12255da40bcbc63",
-  "url": "https://github.com/Sefikak/SOUND/raw/android-0.1.8/SOUND-android-0.1.8.apk",
+  "versionCode": 10,
+  "versionName": "0.1.9",
+  "sha256": "5f7bbb2a333fa51f69719a6177d701bcf96f100c6c1f046cdf76b230fa1f438f",
+  "url": "https://github.com/Sefikak/SOUND/raw/android-0.1.9/SOUND-android-0.1.9.apk",
   "notes": [
-    "Kitaplık artık telefonla bilgisayar arasında anında (yaklaşık 1 sn) eşitleniyor",
-    "Google ile giriş: tarayıcıdaki yeni sayfadan tek dokunuşla SOUND'a dönülüyor",
-    "Açılış daha hızlı: yt-dlp arka planda yükleniyor"
+    "Sanatçı Mix: Kitaplık + menüsünden sanatçıları seç, rastgele şarkılarla albüm oluşsun",
+    "Son eklenen sıralaması artık telefonla bilgisayar arasında aynı",
+    "Ayarlar > Hesap: otomatik eşitleme aç/kapa",
+    "Spotify dosyasıyla aktarma telefonda da var",
+    "Albüm silme gibi işlemlerden sonra bildirimde Geri al"
   ]
 }

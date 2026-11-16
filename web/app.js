@@ -123,13 +123,22 @@ const busy = key => key in S.dl.progress;
 
 /* ---------- bildirim, menü, pencereler ---------- */
 let toastTimer = null;
-function toast(message, error = false) {
+// action: {label, run} — bildirimde düğme (telefonda "Geri al"); düğmeli bildirim 5 sn kalır
+function toast(message, error = false, action = null) {
   const el = $("#toast");
+  if (!action && !error && undoOffer && Date.now() - undoOffer.at < 1500) { action = undoOffer.action; undoOffer = null; }
   el.textContent = message;
-  el.className = "show" + (error ? " error" : "");
+  if (action) {
+    const b = document.createElement("button");
+    b.className = "toast-act"; b.textContent = action.label;
+    b.onclick = () => { el.className = ""; action.run(); };
+    el.append(b);
+  }
+  el.className = "show" + (error ? " error" : "") + (action ? " has-act" : "");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.className = error ? "error" : "", 2800);
+  toastTimer = setTimeout(() => el.className = error ? "error" : "", action ? 5000 : 2800);
 }
+let undoOffer = null;  // telefonda: az önce geri alınabilir bir değişiklik oldu, sıradaki bildirime "Geri al" eklenir
 
 let openMenus = [];
 function closeMenus() { openMenus.forEach(m => m.remove()); openMenus = []; }
@@ -2248,6 +2257,75 @@ async function download(track, kind = "audio") {
   const message = await api.download(plain(track), kind);
   if (message) toast(message);
 }
+/* Sanatçı Mix: yalnızca sanatçıları seç, SOUND onların şarkılarından rastgele bir albüm yapar (webapp.artist_mix) */
+async function openArtistMix() {
+  const picked = new Map();  // anahtar → {id?, name, thumbnail?}
+  const keyOf = a => a.name.toLocaleLowerCase("tr").trim();  // aramadan ve "sık dinlediklerin"den gelen aynı sanatçı tek sayılsın
+  let results = [], count = 30, busy = false, timer = null, seq = 0;
+  // en çok dinlediklerin: adı biliniyor, kimliği sunucu bulur
+  const seenTop = new Set();
+  const top = (S.lib.top_artists || []).map(([name, id]) => ({ name, thumbnail: L.t(id)?.thumbnail }))
+    .filter(a => { const k = keyOf(a); return !seenTop.has(k) && seenTop.add(k); }).slice(0, 10);  // "Ceza"/"CEZA" tek
+  await modal(`<h3>Sanatçı Mix</h3><p style="margin-bottom:10px">Sanatçıları seç; SOUND onların şarkılarından rastgele bir albüm yapar.</p>
+    <div id="amPicked" class="am-picked"></div>
+    <input class="text" type="search" placeholder="Sanatçı ara…" id="amSearch" autocomplete="off">
+    <div id="amList" class="am-list"></div>
+    <div class="set-row"><div><b>Şarkı sayısı</b></div><div class="seg" id="amCount">${[20, 30, 50].map(n => `<button data-n="${n}" class="${n === count ? "on" : ""}">${n}</button>`).join("")}</div></div>
+    <div class="status" id="amStatus"></div>
+    <div class="row-btns" style="margin-top:14px"><button class="textbtn" data-x="close">Vazgeç</button><button class="pill fill" data-x="make">Mix oluştur</button></div>`,
+    (box, done) => {
+      const chip = (a, on) => `<button class="am-artist ${on ? "on" : ""}" data-k="${esc(keyOf(a))}">${a.thumbnail
+        ? `<img src="${esc(art(a.thumbnail))}" alt="">` : `<span class="am-ph">${esc(a.name.slice(0, 1))}</span>`}<span>${esc(a.name)}</span>${on ? "<i>✓</i>" : ""}</button>`;
+      const known = new Map();
+      const draw = () => {
+        $("#amPicked", box).innerHTML = picked.size ? [...picked.values()].map(a => chip(a, true)).join("") : `<small class="muted">Henüz sanatçı seçilmedi</small>`;
+        const list = results.length ? results : top, title = results.length ? "" : (top.length ? `<small class="muted am-head">Sık dinlediklerin</small>` : "");
+        list.forEach(a => { if (!known.get(keyOf(a))?.id) known.set(keyOf(a), a); });
+        $("#amList", box).innerHTML = title + list.map(a => chip(a, picked.has(keyOf(a)))).join("");
+        const make = $('[data-x="make"]', box);
+        make.disabled = busy || !picked.size;
+        make.textContent = busy ? "Hazırlanıyor…" : picked.size ? `Mix oluştur (${picked.size} sanatçı)` : "Mix oluştur";
+      };
+      const search = async q => {
+        const my = ++seq;
+        if (!q) { results = []; return draw(); }
+        const r = await api.artist_search(q);
+        if (my !== seq) return;  // daha yeni bir arama başladı
+        results = r.artists || [];
+        $("#amStatus", box).textContent = r.error || (results.length ? "" : "Sanatçı bulunamadı");
+        draw();
+      };
+      $("#amSearch", box).addEventListener("input", e => { clearTimeout(timer); timer = setTimeout(() => search(e.target.value.trim()), 350); });
+      $("#amSearch", box).addEventListener("keydown", e => { if (e.key === "Enter") { clearTimeout(timer); search(e.target.value.trim()); } });
+      box.addEventListener("click", async e => {
+        const a = e.target.closest(".am-artist");
+        if (a && !busy) {
+          const k = a.dataset.k;
+          if (picked.has(k)) picked.delete(k);
+          else if (picked.size >= 12) $("#amStatus", box).textContent = "En fazla 12 sanatçı seçebilirsin.";
+          else picked.set(k, known.get(k));  // aramadan gelen kimlikli hâl önceliklidir (aşağıda)
+          return draw();
+        }
+        const n = e.target.closest("[data-n]");
+        if (n) { count = +n.dataset.n; box.querySelectorAll("#amCount button").forEach(b => b.classList.toggle("on", b === n)); return; }
+        const x = e.target.closest("[data-x]")?.dataset.x;
+        if (x === "close" && !busy) done(null);
+        if (x === "make" && picked.size && !busy) {
+          busy = true; $("#amStatus", box).textContent = "Şarkılar seçiliyor…"; draw();
+          const r = await api.artist_mix([...picked.values()].map(a => ({ id: a.id || null, name: a.name })), count);
+          busy = false;
+          if (r.error) { $("#amStatus", box).textContent = r.error; return draw(); }
+          done(null);
+          await syncLib();
+          openPage("album", r.id);
+          toast(`“${short(r.name, 40)}” oluşturuldu · ${r.count} şarkı` + (r.missing?.length ? ` · bulunamadı: ${r.missing.join(", ")}` : ""));
+        }
+      });
+      draw();
+      setTimeout(() => $("#amSearch", box)?.focus(), 50);
+    });
+}
+
 async function createAlbum({ folder = null, track = null } = {}) {
   const name = await ask("Yeni albüm", "Albüm adı", `Albümüm #${Object.keys(S.lib.albums).length + 1}`);
   if (!name) return;
@@ -2649,6 +2727,12 @@ document.addEventListener("keydown", e => { if (e.key === "Escape" && D.ghost) D
 
 /* ---------- Python'dan gelen bildirimler ---------- */
 function setLib(lib) {
+  // Telefonda ↶ düğmesi yok (üst çubuk her sayfada görünmüyor): yeni bir geri alma noktası olunca bildirimde "Geri al"
+  if (document.documentElement.classList.contains("mobile") && S.lib && lib.undo && (lib.undo_seq || 0) > (S.lib.undo_seq || 0)) {
+    const label = lib.undo;
+    undoOffer = { at: Date.now(), action: { label: "Geri al", run: () => undo() } };
+    setTimeout(() => { if (undoOffer && Date.now() - undoOffer.at >= 400) { undoOffer = null; toast(label, false, { label: "Geri al", run: () => undo() }); } }, 450);
+  }
   S.lib = lib;
   S.favSet = new Set(lib.favorites);
   const u = $("#undoBtn");
@@ -2872,7 +2956,7 @@ document.addEventListener("pointermove", e => {
   statTip.style.top = Math.max(8, e.clientY - 40) + "px";
 });
 $$("#nav a").forEach(a => a.onclick = () => a.dataset.page === "search" ? ACT.focusSearch() : openPage(a.dataset.page));
-$("#newBtn").onclick = e => { e.stopPropagation(); menuAt([{ label: "Yeni albüm", act: () => createAlbum() }, { label: "Yeni klasör", act: () => createFolder() }], $("#newBtn")); };
+$("#newBtn").onclick = e => { e.stopPropagation(); menuAt([{ label: "Yeni albüm", act: () => createAlbum() }, { label: "Sanatçı Mix", act: () => openArtistMix() }, { label: "Yeni klasör", act: () => createFolder() }], $("#newBtn")); };
 $("#accountBtn").onclick = () => openSettings();
 $("#shuffleBtn").innerHTML = I.shuffle; $("#shuffleBtn").onclick = () => P.toggleShuffle();
 $("#prevBtn").innerHTML = I.prev; $("#prevBtn").onclick = () => P.previous();

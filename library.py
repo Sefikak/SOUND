@@ -81,6 +81,7 @@ class Library:
         }
         self._pending_added = {}  # eşitlemeden gelen zamanlar: (liste, şarkı) → zaman; denetleme bunları kullanır
         self._undo = []  # geri alma: son değişikliklerden önceki kitaplık düzeni (yalnızca bu oturumda)
+        self.undo_seq = 0  # her yeni geri alma noktasında artar (telefonda "Geri al" bildirimi bunu izler)
         fresh = not os.path.exists(DB_FILE)
         self.db = sqlite3.connect(DB_FILE, check_same_thread=False, isolation_level=None)
         self.db.execute("PRAGMA journal_mode=WAL")
@@ -577,6 +578,7 @@ class Library:
                 "tracks": {i: dict(tracks[i]) for i in used if i in tracks},
             })
             del self._undo[:-30]
+            self.undo_seq += 1
 
     def drop_checkpoint(self):
         with self._lock:

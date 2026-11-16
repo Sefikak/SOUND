@@ -231,6 +231,12 @@ def artist_page(browse_id):
     }
 
 
+def release_songs(playlist_id, limit=40):
+    """Bir albümün/single'ın şarkıları (YouTube Music: düzgün sanatçı adı ve kapak)."""
+    result = ytmusic().get_playlist(playlist_id, limit=limit)
+    return [track_from_song(t) for t in result.get("tracks") or [] if t.get("videoId")]
+
+
 def artist_radio(radio_id, limit=50):
     result = ytmusic().get_watch_playlist(playlistId=radio_id, limit=limit)
     return [track_from_song(t) for t in result.get("tracks") or [] if t.get("videoId")]

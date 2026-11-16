@@ -33,7 +33,8 @@ import wintaskbar
 from library import DATA_DIR, Library
 import importer
 from recommender import build_home, mix_for
-from searcher import (artist_page, artist_radio, clean_channel, find_artist, playlist_tracks, remove_duplicates, search_albums,
+from searcher import (_norm, artist_page, artist_radio, clean_channel, find_artist, playlist_tracks, release_songs,
+                      remove_duplicates, search_albums,
                       search_artists, search_playlists, search_songs, search_tracks)
 
 APP_ID = "SOUND.MusicPlayer"
@@ -183,6 +184,7 @@ class Backend:
             "top_artists": [[artist, track["id"]] for artist, track in self.lib.top_artists(12)],
             "recent_searches": data["recent_searches"],
             "undo": self.lib.undo_label,
+            "undo_seq": self.lib.undo_seq,
         }
 
     def downloads_state(self):
@@ -612,6 +614,57 @@ class Backend:
             return {"tracks": artist_radio(radio_id)}
         except Exception as error:
             return {"error": friendly_error(error)}
+
+    def artist_mix(self, refs, count=30):
+        """Sanatçı Mix: seçilen sanatçıların popüler şarkılarından ve son albümlerinden rastgele şarkılarla
+        yeni bir albüm. Şarkılar sanatçılar arasında eşit bölünür, sonra karıştırılır. refs: [{"id"|"name"}]"""
+        import math
+        import random
+        refs = [r for r in refs or [] if isinstance(r, dict) and (r.get("id") or r.get("name"))][:12]
+        if not refs:
+            return {"error": "En az bir sanatçı seç."}
+        count = max(5, min(100, int(count or 30)))
+
+        def pool_for(ref):
+            page = self.artist(ref)
+            if page.get("error"):
+                return ref.get("name") or "?", None, []
+            songs = list(page["songs"])
+            for release in (page.get("albums") or [])[:3] + (page.get("singles") or [])[:2]:
+                try:
+                    songs += release_songs(release["id"], 40)
+                except Exception:
+                    pass  # bir albüm gelmezse diğerleri yeter
+            seen, unique = set(), []
+            for track in songs:  # aynı şarkının albüm ve single kopyaları tek sayılsın
+                key = _norm(track.get("title"))
+                if track.get("id") and key and key not in seen:
+                    seen.add(key)
+                    unique.append(track)
+            return page["name"], page["id"], unique
+
+        with ThreadPoolExecutor(4) as pool:
+            results = list(pool.map(pool_for, refs))
+        found = [(name, songs) for name, _, songs in results if songs]
+        missing = [name for name, _, songs in results if not songs]
+        if not found:
+            return {"error": "Seçilen sanatçıların şarkıları alınamadı; internet bağlantını kontrol et."}
+        per = math.ceil(count / len(found))
+        picked, rest = [], []
+        for _, songs in found:
+            pool = songs[:]
+            random.shuffle(pool)
+            picked += pool[:per]
+            rest += pool[per:]
+        random.shuffle(picked)
+        random.shuffle(rest)
+        mix = (picked + rest)[:count]  # bir sanatçının şarkısı azsa diğerlerinden tamamlanır
+        random.shuffle(mix)
+        names = [name for name, _ in found]
+        title = "Sanatçı Mix: " + ", ".join(names[:3]) + (f" +{len(names) - 3}" if len(names) > 3 else "")
+        self.lib.checkpoint("Sanatçı Mix")
+        album_id = self.lib.create_album(title, tracks=[plain_track(t) for t in mix])
+        return {"id": album_id, "name": title, "count": len(mix), "missing": missing}
 
     def radio(self, track):
         """Kuyruk bitince çalmaya devam etmek için benzer şarkılar."""
@@ -1178,6 +1231,15 @@ class Api:
 
     def artist_radio(self, radio_id):
         return self._b.artist_radio(radio_id)
+
+    def artist_search(self, query):
+        try:
+            return {"artists": search_artists(query, 8)}
+        except Exception as error:
+            return {"error": friendly_error(error)}
+
+    def artist_mix(self, refs, count=30):
+        return self._b.artist_mix(refs, count)
 
     def radio(self, track):
         return self._b.radio(track)

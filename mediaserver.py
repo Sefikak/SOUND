@@ -19,7 +19,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from library import CACHE_DIR, MUSIC_DIR, THUMB_DIR, VIDEO_DIR
+from library import CACHE_DIR, DATA_DIR, MUSIC_DIR, THUMB_DIR, VIDEO_DIR
 
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 TYPES = {".mp3": "audio/mpeg", ".opus": "audio/ogg", ".webm": "audio/webm", ".mp4": "video/mp4", ".js": "text/javascript", ".css": "text/css",
@@ -38,6 +38,24 @@ def register_stream(video_id, kind, url, headers, available_at=0):
 
 def stream_source(video_id, kind):
     return _streams.get(video_id, {}).get(kind)
+
+
+def _log_stream_error(video_id, kind, start, error):
+    """Akış aktarılamadı (arayüz yalnızca "Şarkı çalınamadı" der): nedeni data/stream_errors.log'a.
+    Adresin tamamı değil yalnızca sunucusu yazılır; Deno'nun bulunup bulunmadığı da eklenir."""
+    try:
+        source = _streams.get(video_id, {}).get(kind)
+        host = urllib.parse.urlparse(source[0]).hostname if source else "-"
+        try:
+            import downloader
+            deno = "var" if downloader.JS_OPTIONS else "YOK"
+        except Exception:
+            deno = "?"
+        detail = f"HTTP {error.code}" if isinstance(error, urllib.error.HTTPError) else f"{type(error).__name__}: {error}"
+        with open(os.path.join(DATA_DIR, "stream_errors.log"), "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {video_id} {kind} bayt={start} sunucu={host} deno={deno}: {detail}\n")
+    except Exception:
+        pass
 _thumb_locks = {}
 _thumb_guard = threading.Lock()
 
@@ -104,7 +122,13 @@ class Handler(BaseHTTPRequestHandler):
             elif path.startswith("/videos/"):
                 self._file(_inside(VIDEO_DIR, path[8:]), cache=False)
             elif STREAM_PATH.match(path):
-                self._proxy(*STREAM_PATH.match(path).groups())
+                try:
+                    self._proxy(*STREAM_PATH.match(path).groups())
+                except (ConnectionAbortedError, BrokenPipeError):
+                    raise  # oynatıcı isteği kendisi kesti (ileri sarma, şarkı değişimi): hata değil
+                except Exception as error:
+                    _log_stream_error(*STREAM_PATH.match(path).groups(), self.headers.get("Range") or "0", error)
+                    raise
             elif path.startswith("/thumb/"):
                 video_id = path[7:]
                 source = urllib.parse.parse_qs(parsed.query).get("src", [None])[0]
@@ -151,6 +175,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             upstream = fetch(start, start + chunk - 1 if wanted_end is None else min(wanted_end, start + chunk - 1))
         except urllib.error.HTTPError as error:
+            _log_stream_error(video_id, kind, start, error)
             self._error(error.code)  # 403: adres eskimiş; arayüz yenisini ister
             return
         total = re.search(r"/(\d+)", upstream.headers.get("Content-Range") or "")

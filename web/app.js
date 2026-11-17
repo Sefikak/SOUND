@@ -637,6 +637,52 @@ async function loginImport(service, clientId = null) {
   toast(service === "spotify" ? "Spotify giriş penceresi açıldı; izin verince aktarma kendiliğinden başlar"
     : "Giriş penceresi açıldı; giriş yapınca aktarma kendiliğinden başlar");
 }
+/* Şarkı çalınamadı: GoodbyeDPI açıksa sebebi büyük ihtimalle o (bazı ayarları YouTube'un ses sunucusuna
+   giden bağlantıyı bozuyor; sürücü düzeyinde olduğu için uygulamadan aşılamıyor) → nasıl düzeltileceğini göster */
+async function playFailed(message) {
+  let dpi = null;
+  try { if (api.dpi_info) dpi = await api.dpi_info(); } catch (e) { dpi = null; }
+  if (dpi && dpi.running) toast("GoodbyeDPI YouTube bağlantısını bozuyor olabilir", true, { label: "Nasıl düzeltilir?", run: () => openDpiHelp(dpi) });
+  else toast(message, true);
+}
+function openDpiHelp(dpi) {
+  const sites = (dpi.blacklist || []).slice(0, 4).join(", ");
+  const manualArgs = dpi.service ? '-9 --blacklist \\"%CD%\\blacklist.txt\\"' : "-9 --blacklist ..\\blacklist.txt";
+  return modal(`<h3>GoodbyeDPI şarkıları engelliyor</h3>
+    <p>Bilgisayarında GoodbyeDPI açık. Bazı ayarlarında YouTube'un ses sunucusuna giden bağlantıyı da bozuyor; bunu SOUND'un içinden aşmak mümkün değil.
+      Çözüm: GoodbyeDPI'yi <b>yalnızca engelli sitelere</b> uygulamak. Engelli siteler yine açılır, YouTube'a dokunulmaz.</p>
+    ${dpi.service ? `<p>Otomatik düzeltme GoodbyeDPI'yi <b>-9</b> kipine ve bir site listesine (<b>blacklist.txt</b>) geçirir; DNS ayarların aynen kalır. Windows yönetici izni sorar.</p>` : ""}
+    <details class="dpi-manual"${dpi.service ? "" : " open"}><summary>Elle yapmak istersen</summary>
+    <ol class="steps">
+      <li>GoodbyeDPI klasöründe <b>blacklist.txt</b> dosyası oluştur ve engelli siteleri her satıra bir tane yaz (${esc(sites)}...).
+        ${dpi.folder ? `<span class="link" data-x="list">Hazır listeyle oluştur ve klasörü aç</span>` : ""}</li>
+      <li>GoodbyeDPI'yi kurduğun <b>.cmd</b> dosyasını (ör. <b>${dpi.service ? "service_install_dnsredir_turkey.cmd" : "turkey_dnsredir.cmd"}</b>) Not Defteri'yle aç.
+        <b>-5 --set-ttl 5</b> kısmını (ya da baştaki <b>-</b> ile başlayan kip ayarını) şununla değiştir:
+        <div class="copyline"><code>${esc(manualArgs)}</code><button class="textbtn" data-x="copy">Kopyala</button></div></li>
+      <li>${dpi.service ? "Önce <b>service_remove.cmd</b>'yi, sonra düzenlediğin dosyayı sağ tık → <b>Yönetici olarak çalıştır</b>." : "GoodbyeDPI'yi kapatıp düzenlediğin dosyayla yeniden aç."}</li>
+      <li>Listede olmayan engelli bir site açılmazsa adını <b>blacklist.txt</b>'ye ekleyip GoodbyeDPI'yi yeniden başlat.</li>
+    </ol></details>
+    <div class="row-btns"><button class="textbtn" data-x="close">Kapat</button>${dpi.service ? `<button class="pill fill" data-x="fix">Otomatik düzelt</button>` : ""}</div>`,
+    (box, done) => {
+      $('[data-x="close"]', box).onclick = () => done(null);
+      $('[data-x="copy"]', box).onclick = () => { navigator.clipboard.writeText(manualArgs); toast("Kopyalandı"); };
+      const list = $('[data-x="list"]', box);
+      if (list) list.onclick = async () => {
+        const r = await api.dpi_blacklist();
+        toast(r.error || (r.existed ? "blacklist.txt zaten var, klasör açıldı" : "blacklist.txt oluşturuldu"), !!r.error);
+      };
+      const fix = $('[data-x="fix"]', box);
+      if (fix) fix.onclick = async () => {
+        fix.disabled = true; fix.textContent = "Düzeltiliyor...";
+        const r = await api.dpi_fix();
+        if (r.error) { toast(r.error, true); fix.disabled = false; fix.textContent = "Otomatik düzelt"; return; }
+        done(true);
+        toast("GoodbyeDPI düzeltildi, şarkı yeniden deneniyor");
+        if (P.current) setTimeout(() => P.playCurrent(), 1500);
+      };
+    });
+}
+
 /* Spotify resmi girişi bir "Client ID" ister: kullanıcı bir kez developer.spotify.com'da oluşturur */
 function spotifySetup() {
   const redirect = "http://127.0.0.1:43117/callback";
@@ -1425,7 +1471,7 @@ const P = {
       this.next();
       return;
     }
-    toast(`Şarkı yüklenemedi: ${res.error}`, true);
+    playFailed(`Şarkı yüklenemedi: ${res.error}`);
     playerChanged();
   },
   toggle() {
@@ -1547,7 +1593,7 @@ onAudio("error", () => {
     return;
   }
   P.loading = false;
-  toast("Şarkı çalınamadı", true);
+  playFailed("Şarkı çalınamadı");
   playerChanged();
 });
 

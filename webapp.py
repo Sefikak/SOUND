@@ -115,6 +115,102 @@ def _windows_open(target, url=False):
         return False
 
 
+# GoodbyeDPI (Türkiye'de yaygın DPI aşma aracı) bazı ayarlarda YouTube'un ses sunucusuna (googlevideo.com)
+# giden bağlantıyı da bozuyor; bu bir sürücü düzeyinde olduğu için uygulamadan aşılamıyor. Şarkı çalınamazsa
+# arayüz buna bakıp kullanıcıya GoodbyeDPI'yi yalnızca engelli sitelere uygulamayı anlatıyor.
+DPI_BLACKLIST = ["discord.com", "discord.gg", "discordapp.com", "discordapp.net", "discord.media",
+                 "wattpad.com", "imgur.com", "pastebin.com", "roblox.com"]
+_dpi_cache = [0.0, None]
+
+
+def _hidden_run(command, timeout=10):
+    import subprocess
+    return subprocess.run(command, capture_output=True, text=True, timeout=timeout, errors="replace",
+                          creationflags=0x08000000)  # CREATE_NO_WINDOW
+
+
+def goodbyedpi_info():
+    """{"running", "service", "folder", "args"} — GoodbyeDPI çalışıyor mu, hangi klasörde, hangi ayarla."""
+    if not IS_WINDOWS:
+        return {"running": False}
+    if time.time() - _dpi_cache[0] < 10 and _dpi_cache[1]:
+        return _dpi_cache[1]
+    info = {"running": False, "service": False, "folder": None, "args": ""}
+    try:
+        out = _hidden_run(["tasklist", "/FI", "IMAGENAME eq goodbyedpi.exe", "/NH", "/FO", "CSV"]).stdout
+        info["running"] = "goodbyedpi.exe" in out.lower()
+        if info["running"]:
+            # hizmet olarak kurulduysa yolu ve ayarları hizmet kaydında (yönetici gerekmez)
+            config = _hidden_run(["sc", "qc", "GoodbyeDPI"]).stdout
+            line = next((l for l in config.splitlines() if "BINARY_PATH_NAME" in l), "")
+            if line:
+                command = line.split(":", 1)[1].strip()
+                exe_end = command.lower().find("goodbyedpi.exe") + len("goodbyedpi.exe")
+                exe = command[:exe_end].strip('" ')
+                info.update(service=True, exe=exe, args=command[exe_end:].strip('" '),
+                            folder=os.path.dirname(os.path.dirname(exe)))  # ...\GoodbyeDPI\x86_64\goodbyedpi.exe
+    except Exception:
+        pass
+    _dpi_cache[:] = [time.time(), info]
+    return info
+
+
+def goodbyedpi_fixed_args(args):
+    """Mevcut ayardan bağlantıyı bozan kipleri (-1..-9, --set-ttl N, --auto-ttl [a-b-c], --min-ttl N) ve eski
+    --blacklist'i atar; DNS yönlendirmesi gibi geri kalanı aynen bırakır. Başına -9 + blacklist eklenecek."""
+    tokens = (args or "").split()
+    kept, i = [], 0
+    while i < len(tokens):
+        token = tokens[i]
+        has_value = i + 1 < len(tokens) and not tokens[i + 1].startswith("-")
+        if token in ("--set-ttl", "--min-ttl", "--blacklist", "--auto-ttl"):
+            i += 2 if has_value else 1
+            continue
+        if not (len(token) == 2 and token[0] == "-" and token[1].isdigit()):
+            kept.append(token)
+        i += 1
+    return " ".join(kept)
+
+
+def goodbyedpi_write_blacklist(folder):
+    """GoodbyeDPI klasörüne blacklist.txt yazar (varsa dokunmaz)."""
+    path = os.path.join(folder, "blacklist.txt")
+    if os.path.exists(path):
+        return {"path": path, "existed": True}
+    with open(path, "w", encoding="utf-8", newline="\r\n") as f:
+        f.write("\n".join(DPI_BLACKLIST) + "\n")
+    return {"path": path, "existed": False}
+
+
+def goodbyedpi_fix():
+    """Hizmeti -9 + blacklist ile yeniden yapılandırır (Windows yönetici izni sorar). DNS ayarları korunur."""
+    info = goodbyedpi_info()
+    if not info.get("service") or not info.get("exe"):
+        return {"error": "GoodbyeDPI hizmet olarak kurulu değil; adımları elle uygula"}
+    blacklist = goodbyedpi_write_blacklist(info["folder"])["path"]
+    # sc config binPath= "\"...\goodbyedpi.exe\" -9 --blacklist \"...\blacklist.txt\" --dns-addr ..."
+    inner = f'\\"{info["exe"]}\\" -9 --blacklist \\"{blacklist}\\" {goodbyedpi_fixed_args(info["args"])}'.rstrip()
+    command = f'"{inner}"'
+    script = os.path.join(DATA_DIR, "goodbyedpi_fix.cmd")
+    with open(script, "w", encoding="utf-8", newline="\r\n") as f:
+        f.write("@echo off\nchcp 65001 >nul\nsc stop GoodbyeDPI >nul\nping -n 3 127.0.0.1 >nul\n"
+                f"sc config GoodbyeDPI binPath= {command}\nsc start GoodbyeDPI >nul\n")
+    try:
+        run = _hidden_run(["powershell", "-NoProfile", "-Command",
+                           "Start-Process cmd -ArgumentList '/c \"\"{}\"\"' -Verb RunAs -Wait -WindowStyle Hidden"
+                           .format(script.replace("'", "''"))], timeout=180)  # izin penceresini bekler
+    except Exception:
+        return {"error": "Yönetici izni alınamadı"}
+    _dpi_cache[0] = 0
+    if run.returncode != 0:
+        return {"error": "Yönetici izni verilmedi"}
+    time.sleep(1.5)
+    after = goodbyedpi_info()
+    if "--blacklist" not in after.get("args", ""):
+        return {"error": "Ayar değiştirilemedi; adımları elle uygula"}
+    return {"ok": True, "running": after["running"]}
+
+
 def open_path(path):
     """Dosyayı/klasörü sistemin varsayılan uygulamasıyla açar."""
     if IS_WINDOWS:
@@ -1507,6 +1603,29 @@ class Api:
     def open_url(self, url):
         if url.startswith("https://"):
             open_browser(url)
+
+    def dpi_info(self):
+        info = goodbyedpi_info()
+        return {**info, "blacklist": DPI_BLACKLIST}
+
+    def dpi_blacklist(self):
+        info = goodbyedpi_info()
+        if not info.get("folder") or not os.path.isdir(info["folder"]):
+            return {"error": "GoodbyeDPI klasörü bulunamadı"}
+        try:
+            result = goodbyedpi_write_blacklist(info["folder"])
+        except OSError as error:
+            return {"error": f"blacklist.txt yazılamadı: {error}"}
+        open_path(info["folder"])
+        return result
+
+    def dpi_fix(self):
+        return goodbyedpi_fix()
+
+    def dpi_open_folder(self):
+        info = goodbyedpi_info()
+        if info.get("folder") and os.path.isdir(info["folder"]):
+            open_path(info["folder"])
 
     def open_music_folder(self):
         open_path(os.path.join(DATA_DIR, "music"))

@@ -5,6 +5,10 @@ Arayüz web/ klasöründe (HTML/CSS/JS). Ses ve video arayüzün içindeki oynat
 öneriler, YouTube hesabı ve Windows entegrasyonunu (görev çubuğu butonları, medya tuşları) yürütür.
 """
 import ctypes
+try:
+    import ctypes.wintypes  # yalnızca Windows'ta kullanılıyor; bazı Linux/Android Python'larında yüklenemiyor
+except (ImportError, ValueError):
+    pass
 import json
 import os
 import queue
@@ -306,7 +310,7 @@ class Backend:
         self.media_thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix="media")
         self.shown_title = None
         self.session = self._load_session()
-        self.geometry = dict(self.session.get("window") or {})
+        self.geometry = _sane_geometry(self.session.get("window"))
         self.lib.subscribe(lambda: self.push("library", self.snapshot()))
         self.cloud = cloud.Cloud(self.lib, lambda status: self.push("cloud", status))
         self.cloud_login = None  # Google girişinin dönüşünü bekleyen yerel sunucu
@@ -389,6 +393,7 @@ class Backend:
         if not hwnd:
             return
         self.hwnd = hwnd
+        self.ensure_on_screen()
         self.set_app_icon((self.lib.settings.get("ui") or {}).get("accent"))
         self.win.submit(self._setup_windows_controls)
 
@@ -487,19 +492,49 @@ class Backend:
             except Exception:
                 pass
 
+    def _minimized(self):
+        # küçültülmüş pencere Windows'ta -32000'e taşınır ve 160x28 olur; bunu kaydedersek sonraki açılışta
+        # pencere ekranın dışında açılır ("uygulama açık ama pencere yok")
+        return bool(IS_WINDOWS and self.hwnd and ctypes.windll.user32.IsIconic(self.hwnd))
+
     def on_moved(self, x, y):
-        if not self.geometry.get("maximized"):
+        if not self.geometry.get("maximized") and not self._minimized() and x > -10000 and y > -10000:
             self.geometry.update(x=x, y=y)
 
     def on_resized(self, width, height):
-        if not self.geometry.get("maximized"):
+        if not self.geometry.get("maximized") and not self._minimized() and width >= 400 and height >= 300:
             self.geometry.update(width=width, height=height)
 
+    def ensure_on_screen(self):
+        """Pencere hiçbir ekranda görünmüyorsa (ikinci ekran çıkarıldı, bozuk konum kaydı) ana ekranın ortasına al."""
+        if not IS_WINDOWS or not self.hwnd:
+            return
+        user32 = ctypes.windll.user32
+        if user32.IsIconic(self.hwnd):
+            return  # küçültülmüşse geri açılınca eski (görünür) yerine döner
+        rect = ctypes.wintypes.RECT()
+        if not user32.GetWindowRect(self.hwnd, ctypes.byref(rect)):
+            return
+        # başlık çubuğu bir ekrana değiyor mu (yoksa pencere tutulup çekilemez)
+        title = ctypes.wintypes.RECT(rect.left + 40, rect.top, rect.right - 40, rect.top + 30)
+        if user32.MonitorFromRect(ctypes.byref(title), 0):  # MONITOR_DEFAULTTONULL
+            return
+        area = ctypes.wintypes.RECT()
+        user32.SystemParametersInfoW(0x30, 0, ctypes.byref(area), 0)  # SPI_GETWORKAREA: ana ekran, görev çubuğu hariç
+        width = min(rect.right - rect.left, area.right - area.left)
+        height = min(rect.bottom - rect.top, area.bottom - area.top)
+        if width < 400 or height < 300:
+            width, height = min(1320, area.right - area.left), min(840, area.bottom - area.top)
+        x = area.left + (area.right - area.left - width) // 2
+        y = area.top + (area.bottom - area.top - height) // 2
+        user32.SetWindowPos(self.hwnd, 0, x, y, width, height, 0x0004 | 0x0010)  # NOZORDER | NOACTIVATE
+
     def on_closing(self):
-        if not self.geometry.get("maximized"):
+        if not self.geometry.get("maximized") and not self._minimized():
             try:
                 w = self.window
-                self.geometry.update(x=w.x, y=w.y, width=w.width, height=w.height)
+                if w.x > -10000 and w.y > -10000 and w.width >= 400 and w.height >= 300:
+                    self.geometry.update(x=w.x, y=w.y, width=w.width, height=w.height)
             except Exception:
                 pass
         self.save_session()
@@ -523,12 +558,20 @@ class Backend:
                              "Çıkış'ı seç; bunu Ayarlar'dan kapatabilirsin.")
 
     def show_window(self):
-        """Tepsiden ya da ikinci kez açılınca: gizli pencereyi geri getirip öne al."""
-        try:
-            self.window.show()
-        except Exception:
-            pass
-        self.focus_window()
+        """Tepsiden ya da ikinci kez açılınca: gizli pencereyi geri getirip öne al. Uygulama kapanıyorsa
+        (Çıkış, güncelleme sonrası yeniden başlatma) False: yeni açılan kopya kendisi açılsın."""
+        if self.quitting or self.closing:
+            return False
+
+        def show():
+            try:
+                self.window.show()
+            except Exception:
+                pass
+            self.focus_window()
+            self.ensure_on_screen()
+        threading.Thread(target=show, daemon=True).start()
+        return True
 
     def quit_app(self):
         self.quitting = True
@@ -1719,6 +1762,45 @@ class Api:
 
 
 INSTANCE_FILE = os.path.join(DATA_DIR, "instance.json")
+_instance_lock = None  # Windows mutex tutamacı: süreç yaşadıkça açık kalır
+
+
+def _sane_geometry(saved):
+    """Kayıtlı pencere konumu/boyutu; küçültülmüş pencereden kalan (-32000, 160x28) değerler atılır."""
+    geometry = dict(saved or {})
+    if (geometry.get("x") or 0) < -10000 or (geometry.get("y") or 0) < -10000:
+        geometry.pop("x", None)
+        geometry.pop("y", None)
+    if (geometry.get("width") or 0) < 400 or (geometry.get("height") or 0) < 300:
+        geometry.pop("width", None)
+        geometry.pop("height", None)
+    return geometry
+
+
+def _acquire_single_instance():
+    """Yalnızca bir SOUND çalışsın. Başka biri çalışıyorsa onun penceresi öne getirilir ve False döner.
+    Windows'ta adlandırılmış mutex (aynı anda iki kez tıklansa da tek kopya); kapanmakta olan bir kopya varsa
+    (güncelleme sonrası yeniden başlatma) onun çıkması beklenir."""
+    global _instance_lock
+    if not IS_WINDOWS:
+        return not _show_running_instance()
+    kernel32 = ctypes.windll.kernel32
+    kernel32.CreateMutexW.restype = ctypes.c_void_p
+    kernel32.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+    handle = kernel32.CreateMutexW(None, False, "Local\\SOUND.MusicPlayer.Instance")
+    if not handle:
+        return not _show_running_instance()
+    deadline = time.time() + 20
+    while time.time() < deadline:
+        if kernel32.WaitForSingleObject(handle, 0) in (0, 0x80):  # sahiplenildi / önceki kopya düşmüş
+            _instance_lock = handle
+            return True
+        if _show_running_instance():
+            return False
+        if kernel32.WaitForSingleObject(handle, 500) in (0, 0x80):
+            _instance_lock = handle
+            return True
+    return False  # öteki kopya ne yanıt veriyor ne kapanıyor: ikinci pencere açma
 
 
 def _show_running_instance():
@@ -1735,7 +1817,7 @@ def _show_running_instance():
 
 
 def run():
-    if _show_running_instance():
+    if not _acquire_single_instance():
         return
     backend = Backend()
     base = mediaserver.start()

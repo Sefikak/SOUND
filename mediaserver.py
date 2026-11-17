@@ -113,8 +113,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if urllib.parse.urlparse(self.path).path == "/show" and on_show and self.headers.get("Origin") is None:
-            threading.Thread(target=on_show, daemon=True).start()
-            self._error(204)
+            self._error(204 if on_show() else 503)  # 503: bu kopya kapanıyor
         else:
             self._error(404)
 

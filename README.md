@@ -17,9 +17,9 @@ Kaldırmak için: **Ayarlar → Uygulamalar → SOUND → Kaldır** (kitaplığ�
 
 ## Linux
 
-### [⬇ install.sh'yi indir](https://github.com/Sefikak/SOUND/raw/main/linux/install.sh)
+### [⬇ SOUND-linux.zip'i indir](https://github.com/Sefikak/SOUND/raw/main/SOUND-linux.zip)
 
-İndirdiğin klasörde terminali açıp `bash install.sh` yaz. Ya da hiçbir şey indirmeden tek komutla kur:
+Zip'i aç, içindeki **SOUND-linux** klasöründe terminali açıp `bash install.sh` yaz. Ya da hiçbir şey indirmeden tek komutla kur:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Sefikak/SOUND/main/linux/install.sh | bash

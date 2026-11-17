@@ -15,6 +15,21 @@ Kaldırmak için: **Ayarlar → Uygulamalar → SOUND → Kaldır** (kitaplığ�
 
 **Gereksinimler:** Windows 10/11 (64 bit), internet bağlantısı.
 
+## Linux
+
+### [⬇ install.sh'yi indir](https://github.com/Sefikak/SOUND/raw/main/linux/install.sh)
+
+İndirdiğin klasörde terminali açıp `bash install.sh` yaz. Ya da hiçbir şey indirmeden tek komutla kur:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Sefikak/SOUND/main/linux/install.sh | bash
+```
+
+Kurulum eksik sistem paketlerini kurar (şifre sorar), SOUND'u `~/.local/share/sound`'a indirir ve uygulama menüsüne ekler. Terminalden `sound` komutuyla da açılır. Windows'taki gibi kendini günceller.
+Kaldırmak için: `bash ~/.local/share/sound/linux/uninstall.sh`
+
+**Gereksinimler:** 64 bit Linux (Ubuntu/Debian/Mint, Fedora, Arch, openSUSE), Python 3.10+, masaüstü ortamı.
+
 ## Mobil sürüm (Android)
 
 ### [⬇ SOUND-android-0.1.9.apk'yı indir](https://github.com/Sefikak/SOUND/raw/android-0.1.9/SOUND-android-0.1.9.apk)

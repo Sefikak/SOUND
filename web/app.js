@@ -394,6 +394,8 @@ async function openSettings() {
         <div class="set-row"><div><b>YouTube Music</b><p>Hesabına giriş yap; beğendiğin şarkılar favori, kayıtlı albümlerin ve listelerin albüm olarak eklenir. Zaten olanlar atlanır.</p></div><button class="pill" data-x="loginYtm">Giriş yap ve aktar</button></div>
         <div class="set-row"><div><b>Spotify hesabı (Premium)</b><p>Hesabına giriş yap; beğendiğin şarkılar ve listelerin doğrudan aktarılır. İlk seferde bir kerelik kurulum ister.</p></div><button class="pill" data-x="loginSpotify">Giriş yap ve aktar</button></div>
         <div class="set-row"><div><b>Spotify bağlantı ya da dosya</b><p>Premium gerekmez: liste bağlantıları ya da hesap verisi dosyanla aktarılır.</p></div><button class="pill" data-x="importSpotify">Aktar</button></div>
+        ${document.documentElement.classList.contains("mobile") ? "" : `<div class="set-sec">Arka plan</div>
+        <div class="set-row"><div><b>Kapatınca arka planda çalış</b><p>Pencereyi kapatınca SOUND saatin yanındaki simgelere (sistem tepsisi) iner, müzik çalmaya devam eder. Simgeye tıklayınca geri açılır; tamamen kapatmak için sağ tıklayıp <b>Çıkış</b>'ı seç.</p></div>${toggleHTML("tray", s.tray !== false)}</div>`}
         <div class="set-sec">Güncelleme</div>
         <div class="set-row"><div><b>Otomatik güncelle</b><p>${ver.git ? "GitHub'da yeni sürüm çıkınca SOUND kendini arka planda günceller; yeniden başlatınca etkin olur." : "Uygulama klasörü henüz bir GitHub deposuna bağlı değil."}</p></div>${toggleHTML("auto_update", s.auto_update !== false)}</div>
         <div class="set-row"><div><b>Sürüm</b><p>${esc(ver.version || "bilinmiyor")}${ver.pending ? " · yeni sürüm indirildi" : ""}</p></div>${ver.pending
@@ -408,7 +410,7 @@ async function openSettings() {
     box.addEventListener("click", async e => {
       const sw = e.target.closest("[data-set]");
       if (sw) {
-        const k = sw.dataset.set, cur = k === "auto_update" ? st.settings[k] !== false : st.settings[k];
+        const k = sw.dataset.set, cur = (k === "auto_update" || k === "tray") ? st.settings[k] !== false : st.settings[k];
         return save({ [k]: !cur });
       }
       const x = e.target.closest("[data-x]")?.dataset.x;

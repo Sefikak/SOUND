@@ -18,7 +18,9 @@ from concurrent.futures import ThreadPoolExecutor
 # Sonraki şarkıya kendiliğinden geçerken tarayıcının "önce kullanıcı tıklasın" kuralı engel olmasın
 # Tarayıcı motorunun kendi medya oturumunu kapat: yoksa Windows iki oturum görür, kulaklık / klavye medya
 # tuşları SOUND yerine motorun oturumuna gidip kaybolur (mediakeys.py tek yetkili oturum olsun)
-BROWSER_FLAGS = "--autoplay-policy=no-user-gesture-required --disable-features=HardwareMediaKeyHandling,MediaSessionService"
+# arka plan kısıtlamaları kapalı: pencere küçültülünce ya da tepsiye inince zamanlayıcılar (geçiş, sıradakini hazırlama) yavaşlamasın
+BROWSER_FLAGS = ("--autoplay-policy=no-user-gesture-required --disable-features=HardwareMediaKeyHandling,MediaSessionService "
+                 "--disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows")
 os.environ.setdefault("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", BROWSER_FLAGS)  # Windows (Edge WebView2)
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", BROWSER_FLAGS)  # Linux (Qt WebEngine; medya tuşları mpris.py'de)
 IS_WINDOWS = os.name == "nt"
@@ -272,6 +274,8 @@ class Backend:
         self.app_return_url = None  # telefonda android_main "soundapp://back" koyar (giriş sayfasındaki düğme)
         self.hwnd = None
         self.closing = False
+        self.quitting = False  # tepsiden Çıkış / yeniden başlatma: kapatma tepsiye indirmesin
+        self.tray = None       # tray.Tray; kurulamadıysa None (pencereyi kapatmak uygulamayı kapatır)
         self.started = False
         self.events = queue.Queue()
         self.win = ThreadPoolExecutor(1)        # Windows görev çubuğu / medya kartı işleri tek iş parçacığında
@@ -472,6 +476,9 @@ class Backend:
                     pass
         self.win.submit(apply)
         self.media_thread.submit(apply_media)
+        if self.tray:
+            artist = f" — {track['artist']}" if track and track.get("artist") else ""
+            self.tray.set_state(f"{track['title']}{artist}" if track else "SOUND", playing or loading)
         title = f"{track['title']} · SOUND" if track else "SOUND"
         if title != self.shown_title and self.window:
             self.shown_title = title
@@ -496,7 +503,42 @@ class Backend:
             except Exception:
                 pass
         self.save_session()
+        if self.tray and not self.quitting and self.lib.settings.get("tray", True):
+            # kapatma tepsiye indirir: pencere gizlenir, çalma sürer. Gizleme kapanış olayı bittikten sonra
+            # (olay arayüz iş parçacığını bekletiyor; içinden hide() çağırmak kilitlenir)
+            threading.Timer(0.05, self._hide_to_tray).start()
+            return False
         self.closing = True
+        if self.tray:
+            self.tray.stop()
+
+    def _hide_to_tray(self):
+        try:
+            self.window.hide()
+        except Exception:
+            return
+        if not self.lib.settings.get("tray_hint_shown"):
+            self.lib.update_settings({"tray_hint_shown": True})
+            self.tray.notify("SOUND arka planda çalmaya devam ediyor. Tamamen kapatmak için simgeye sağ tıklayıp "
+                             "Çıkış'ı seç; bunu Ayarlar'dan kapatabilirsin.")
+
+    def show_window(self):
+        """Tepsiden ya da ikinci kez açılınca: gizli pencereyi geri getirip öne al."""
+        try:
+            self.window.show()
+        except Exception:
+            pass
+        self.focus_window()
+
+    def quit_app(self):
+        self.quitting = True
+        self.save_session()
+        if self.tray:
+            self.tray.stop()
+        try:
+            self.window.destroy()
+        finally:
+            threading.Timer(3, lambda: os._exit(0)).start()  # pencere kapanmazsa da çık
 
     # ---------- açılış işleri ----------
 
@@ -559,6 +601,7 @@ class Backend:
             return result
 
     def restart_app(self):
+        self.quitting = True
         self.save_session()
         selfupdate.restart()
         try:
@@ -1675,9 +1718,33 @@ class Api:
         return self._b.cloud_call(self._b.cloud.delete_account)
 
 
+INSTANCE_FILE = os.path.join(DATA_DIR, "instance.json")
+
+
+def _show_running_instance():
+    """SOUND zaten açıksa (belki tepside) onun penceresini öne getirir ve True döner; ikinci kopya açılmaz."""
+    import urllib.request
+    try:
+        with open(INSTANCE_FILE, encoding="utf-8") as f:
+            port = int(json.load(f)["port"])
+        request = urllib.request.Request(f"http://127.0.0.1:{port}/show", data=b"", method="POST")
+        with urllib.request.urlopen(request, timeout=2) as response:
+            return response.status == 204
+    except Exception:
+        return False
+
+
 def run():
+    if _show_running_instance():
+        return
     backend = Backend()
     base = mediaserver.start()
+    mediaserver.on_show = backend.show_window
+    try:
+        with open(INSTANCE_FILE, "w", encoding="utf-8") as f:
+            json.dump({"port": int(base.rsplit(":", 1)[1]), "pid": os.getpid()}, f)
+    except (OSError, ValueError):
+        pass
     geometry = backend.geometry
     window = webview.create_window(
         "SOUND", url=base + "/index.html", js_api=Api(backend),
@@ -1691,6 +1758,11 @@ def run():
     window.events.resized += backend.on_resized
     window.events.maximized += lambda: backend.geometry.update(maximized=True)
     window.events.restored += lambda: backend.geometry.update(maximized=False)
+    import tray
+    backend.tray = tray.Tray(ICON if IS_WINDOWS else ICON_PNG, backend.show_window,
+                             lambda action: backend.push("command", action), backend.quit_app)
+    if not backend.tray.start():
+        backend.tray = None
     options = {}
     if not IS_WINDOWS:
         # Linux: Qt WebEngine (Edge WebView2 ile aynı Chromium motoru). Arayüz boyutu canlı değişemiyor

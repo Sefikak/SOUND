@@ -54,7 +54,8 @@ CREATE TABLE IF NOT EXISTS added (list TEXT, track_id TEXT, at REAL, PRIMARY KEY
 """
 DEFAULT_SETTINGS = {"crossfade": False, "crossfade_seconds": 6, "gapless": True, "cache_mb": 1500, "autoplay": True,
                     "normalize": True, "norm_target": -14,
-                    "cloud_auto": True}  # SOUND hesabı: açılışta ve arka planda kendiliğinden eşitle
+                    "cloud_auto": True,  # SOUND hesabı: açılışta ve arka planda kendiliğinden eşitle
+                    "tray": True}  # pencereyi kapatınca tepsiye in, arka planda çalmaya devam et
 
 
 class Library:

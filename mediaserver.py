@@ -105,8 +105,18 @@ def _cached_image(name, source):
     return path
 
 
+on_show = None  # webapp: ikinci kez açılınca çalışan SOUND'un penceresini öne getirir (POST /show)
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+
+    def do_POST(self):
+        if urllib.parse.urlparse(self.path).path == "/show" and on_show and self.headers.get("Origin") is None:
+            threading.Thread(target=on_show, daemon=True).start()
+            self._error(204)
+        else:
+            self._error(404)
 
     def log_message(self, *args):
         pass

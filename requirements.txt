@@ -7,6 +7,8 @@ yt-dlp-ejs
 pywebview
 ytmusicapi
 websocket-client
+# sistem tepsisi simgesi (pencere kapatılınca arka planda çalma)
+pystray; sys_platform == "win32" or sys_platform == "linux"
 # Windows: medya tuşları (SMTC), eski arayüzden kalan pygame
 pygame; sys_platform == "win32"
 winrt-runtime; sys_platform == "win32"

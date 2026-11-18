@@ -56,7 +56,7 @@ def _patch_downloads():
         found = next((n for n in os.listdir(MUSIC_DIR) if n.startswith(stem + ".") and not n.endswith(".part")), None)
         if not found:
             cached = downloader.cache_path(track["id"])
-            if os.path.exists(cached):
+            if downloader.cache_valid(track["id"]):
                 found = stem + ".webm"
                 shutil.copyfile(cached, os.path.join(MUSIC_DIR, found))
             else:
@@ -244,6 +244,8 @@ def start(data_dir, native):
     _patch_downloads()
     _backend = webapp.Backend()
     _backend.window = Window(native)
+    from android.os import Build
+    _backend.devices.describe(f"{Build.MANUFACTURER.capitalize()} {Build.MODEL}", "phone")
     _backend.app_return_url = "soundapp://back"  # tarayıcıdaki giriş sayfasının "SOUND'a dön" düğmesi (AndroidManifest)
     _api = webapp.Api(_backend)
     _patch_login(native, _backend)

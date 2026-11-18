@@ -9,7 +9,7 @@ plugins {
 // Masaüstü SOUND tek kaynak: arka uç modülleri ve web arayüzü her derlemede oradan alınır, kopyası tutulmaz.
 val soundDir = rootDir.resolve((findProperty("soundDir") as String?) ?: "../../SOUND")
 val sharedDir = layout.buildDirectory.dir("generated/sound")
-val sharedModules = listOf("library", "cloud", "searcher", "downloader", "recommender", "lyricsfinder", "importer", "mediaserver", "webapp")
+val sharedModules = listOf("library", "cloud", "listen", "devices", "social", "searcher", "downloader", "recommender", "lyricsfinder", "importer", "mediaserver", "webapp")
 
 val syncSound by tasks.registering(Sync::class) {
     into(sharedDir)
@@ -61,8 +61,8 @@ android {
         applicationId = "com.sound.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "0.1.9"
+        versionCode = 11
+        versionName = "0.1.10"
         // armeabi-v7a: 64 bit işlemcili olsa da 32 bit Android kullanan telefonlar (çoğu uygun fiyatlı Samsung) için
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }

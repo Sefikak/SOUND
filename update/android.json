@@ -1,13 +1,14 @@
 {
-  "versionCode": 10,
-  "versionName": "0.1.9",
-  "sha256": "5f7bbb2a333fa51f69719a6177d701bcf96f100c6c1f046cdf76b230fa1f438f",
-  "url": "https://github.com/Sefikak/SOUND/raw/android-0.1.9/SOUND-android-0.1.9.apk",
+  "versionCode": 11,
+  "versionName": "0.1.10",
+  "sha256": "925c4eff32ea9402ed4e02b20bcc3c9d48a624caa9b2d9156e7b12dc5a520aac",
+  "url": "https://github.com/Sefikak/SOUND/raw/android-0.1.10/SOUND-android-0.1.10.apk",
   "notes": [
-    "Sanatçı Mix: Kitaplık + menüsünden sanatçıları seç, rastgele şarkılarla albüm oluşsun",
-    "Son eklenen sıralaması artık telefonla bilgisayar arasında aynı",
-    "Ayarlar > Hesap: otomatik eşitleme aç/kapa",
-    "Spotify dosyasıyla aktarma telefonda da var",
-    "Albüm silme gibi işlemlerden sonra bildirimde Geri al"
+    "Ortak dinleme: oda aç, arkadaşlarınla aynı şarkıyı aynı anda dinle",
+    "Çalınacak cihazı seç: telefondan bilgisayarı yönet, müziği cihazlar arasında taşı",
+    "Profil, arkadaş ekleme ve mesajlaşma",
+    "Kitaplıkta albüm sırasını menüden değiştir",
+    "Müziğin kendi kendine durması ve uygulamanın arka planda kapanması için düzeltmeler",
+    "Bozuk önbellek yüzünden çalınamayan şarkılar kendini onarır"
   ]
 }

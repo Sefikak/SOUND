@@ -9,11 +9,16 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.os.PowerManager
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -26,9 +31,15 @@ import kotlin.concurrent.thread
 /**
  * Müzik uygulama arka plandayken sürsün diye ön plan hizmeti: bildirim, kilit ekranı ve kulaklık düğmeleri.
  * Sesi WebView çalar; hizmet süreci ayakta tutar ve düğmeleri arayüze iletir.
+ *
+ * Android 12'den beri arka plandaki uygulama ön plan hizmetini yeniden başlatamaz. Bu yüzden hizmet şarkı aralarında ve
+ * kısa duraklamalarda ön planda kalır; yalnızca uzun duraklamadan sonra ön plandan çıkar.
  */
 class PlaybackService : Service() {
     private lateinit var session: MediaSessionCompat
+    private lateinit var wakeLock: PowerManager.WakeLock
+    private lateinit var wifiLock: WifiManager.WifiLock
+    private val main = Handler(Looper.getMainLooper())
     private var artId: String? = null
     private var art: Bitmap? = null
     private var title = "SOUND"
@@ -36,17 +47,33 @@ class PlaybackService : Service() {
     private var playing = false
     private var base: String? = null
     private var trackId: String? = null
+    private var released = false   // uzun duraklama: ön plandan çıkıldı
+    private var destroyed = false
+
+    private val releaseForeground = Runnable {
+        released = true
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_DETACH)
+    }
+    private val releaseLocks = Runnable { setLocks(false) }
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL, "Çalan şarkı", NotificationManager.IMPORTANCE_LOW).apply { setShowBadge(false) },
         )
+        wakeLock = getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SOUND:playback").apply { setReferenceCounted(false) }
+        @Suppress("DEPRECATION")
+        wifiLock = applicationContext.getSystemService(WifiManager::class.java)
+            .createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "SOUND:playback").apply { setReferenceCounted(false) }
         session = MediaSessionCompat(this, "SOUND").apply {
             setCallback(object : MediaSessionCompat.Callback() {
-                override fun onPlay() = send("toggle")
-                override fun onPause() = send("toggle")
+                // Sistem "çal" ya da "duraklat" der: durumu tersine çevirmek çalan şarkıyı durdurabilirdi
+                override fun onPlay() = send("play")
+                override fun onPause() = send("pause")
+                override fun onStop() = send("pause")
                 override fun onSkipToNext() = send("next")
                 override fun onSkipToPrevious() = send("previous")
             })
@@ -55,21 +82,56 @@ class PlaybackService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        released = false  // bu çağrıdan sonra ön plana geçmek zorunlu ve izinli
         intent?.getStringExtra(EXTRA_ACTION)?.let { send(it) }
         if (intent != null && intent.hasExtra(EXTRA_PLAYING)) {
-            playing = intent.getBooleanExtra(EXTRA_PLAYING, false)
-            title = intent.getStringExtra(EXTRA_TITLE) ?: "SOUND"
-            artist = intent.getStringExtra(EXTRA_ARTIST) ?: ""
-            trackId = intent.getStringExtra(EXTRA_ID)
-            base = intent.getStringExtra(EXTRA_BASE)
-        }
-        show()
-        if (trackId != artId) loadArt()
+            applyState(
+                intent.getBooleanExtra(EXTRA_PLAYING, false),
+                intent.getStringExtra(EXTRA_TITLE) ?: "SOUND",
+                intent.getStringExtra(EXTRA_ARTIST) ?: "",
+                intent.getStringExtra(EXTRA_ID),
+                intent.getStringExtra(EXTRA_BASE),
+            )
+        } else show()
         return START_NOT_STICKY
     }
 
+    private fun applyState(playing: Boolean, title: String, artist: String, id: String?, base: String?) {
+        this.playing = playing
+        this.title = title
+        this.artist = artist
+        trackId = id
+        this.base = base
+        main.removeCallbacks(releaseForeground)
+        main.removeCallbacks(releaseLocks)
+        if (playing) {
+            released = false
+            setLocks(true)
+        } else {
+            main.postDelayed(releaseLocks, LOCK_GRACE_MS)  // şarkı arasında telefon uyumasın, sıradaki hazırlansın
+            if (!released) main.postDelayed(releaseForeground, FOREGROUND_GRACE_MS)
+        }
+        show()
+        if (trackId != artId) loadArt()
+    }
+
+    private fun setLocks(on: Boolean) {
+        runCatching {
+            if (on) {
+                if (!wakeLock.isHeld) wakeLock.acquire()
+                if (!wifiLock.isHeld) wifiLock.acquire()
+            } else {
+                if (wakeLock.isHeld) wakeLock.release()
+                if (wifiLock.isHeld) wifiLock.release()
+            }
+        }.onFailure { Log.w("SOUND", "Çalma kilitleri", it) }
+    }
+
     private fun send(action: String) {
-        thread { Python.getInstance().getModule("android_main").callAttr("command", action) }
+        thread {
+            runCatching { Python.getInstance().getModule("android_main").callAttr("command", action) }
+                .onFailure { Log.e("SOUND", "Komut iletilemedi: $action", it) }
+        }
     }
 
     private fun button(icon: Int, label: String, action: String, code: Int) = NotificationCompat.Action(
@@ -81,6 +143,7 @@ class PlaybackService : Service() {
     )
 
     private fun show() {
+        if (destroyed) return
         session.setMetadata(
             MediaMetadataCompat.Builder()
                 .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
@@ -118,9 +181,16 @@ class PlaybackService : Service() {
             .addAction(button(R.drawable.ic_next, "Sonraki", "next", 3))
             .setStyle(MediaStyle().setMediaSession(session.sessionToken).setShowActionsInCompactView(0, 1, 2))
             .build()
+        if (released) {
+            getSystemService(NotificationManager::class.java).notify(NOTIFICATION, notification)
+            return
+        }
         val type = if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0
-        ServiceCompat.startForeground(this, NOTIFICATION, notification, type)
-        if (!playing) ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_DETACH)
+        // Arka planda izin verilmezse uygulama düşmesin: bildirim yine güncellenir
+        runCatching { ServiceCompat.startForeground(this, NOTIFICATION, notification, type) }.onFailure {
+            Log.w("SOUND", "Ön plana geçilemedi", it)
+            getSystemService(NotificationManager::class.java).notify(NOTIFICATION, notification)
+        }
     }
 
     private fun loadArt() {
@@ -128,12 +198,24 @@ class PlaybackService : Service() {
         val root = base ?: return
         artId = id
         thread {
-            val bitmap = runCatching { URL("$root/thumb/$id").openStream().use { BitmapFactory.decodeStream(it) } }.getOrNull()
-            if (bitmap != null && id == trackId) {
-                art = bitmap
-                show()
+            val bitmap = runCatching {
+                val connection = URL("$root/thumb/$id").openConnection().apply { connectTimeout = 10_000; readTimeout = 10_000 }
+                connection.getInputStream().use { BitmapFactory.decodeStream(it) }?.let { scaled(it) }
+            }.getOrNull()
+            if (bitmap != null) main.post {
+                if (!destroyed && id == trackId) {
+                    art = bitmap
+                    show()
+                }
             }
         }
+    }
+
+    /** Büyük kapak bildirim ve oturum üzerinden sisteme gönderilirken sınırı aşabilir. */
+    private fun scaled(bitmap: Bitmap): Bitmap {
+        val longest = maxOf(bitmap.width, bitmap.height)
+        if (longest <= ART_SIZE) return bitmap
+        return Bitmap.createScaledBitmap(bitmap, bitmap.width * ART_SIZE / longest, bitmap.height * ART_SIZE / longest, true)
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -141,7 +223,10 @@ class PlaybackService : Service() {
     }
 
     override fun onDestroy() {
-        running = false
+        destroyed = true
+        instance = null
+        main.removeCallbacksAndMessages(null)
+        setLocks(false)
         session.release()
         super.onDestroy()
     }
@@ -157,21 +242,33 @@ class PlaybackService : Service() {
         private const val EXTRA_ARTIST = "artist"
         private const val EXTRA_ID = "id"
         private const val EXTRA_BASE = "base"
-        private var running = false
+        private const val ART_SIZE = 512
+        private const val LOCK_GRACE_MS = 30_000L
+        private const val FOREGROUND_GRACE_MS = 10 * 60_000L
+        private var instance: PlaybackService? = null
 
-        /** Arayüzdeki çalma durumu değişti. Hizmet ilk çalmada başlar, çalma yokken hiç başlamaz. */
+        /** Arayüz süreci ölürse çalmanın sürdürülüp sürdürülmeyeceğini söyler. */
+        val isPlaying: Boolean get() = instance?.playing == true
+
+        /** Arayüzdeki çalma durumu değişti. Hizmet ilk çalmada başlar, sonra doğrudan güncellenir (ana iş parçacığında çağrılır). */
         fun update(context: Context, state: JSONObject, pageUrl: String?) {
             val track = state.optJSONObject("track") ?: return
             val playing = state.optBoolean("playing") || state.optBoolean("loading")
-            if (!playing && !running) return
-            running = true
+            val base = pageUrl?.substringBeforeLast("/")
+            val service = instance
+            if (service != null) {
+                service.applyState(playing, track.optString("title"), track.optString("artist"), track.optString("id"), base)
+                return
+            }
+            if (!playing) return
             val intent = Intent(context, PlaybackService::class.java)
-                .putExtra(EXTRA_PLAYING, playing)
+                .putExtra(EXTRA_PLAYING, true)
                 .putExtra(EXTRA_TITLE, track.optString("title"))
                 .putExtra(EXTRA_ARTIST, track.optString("artist"))
                 .putExtra(EXTRA_ID, track.optString("id"))
-                .putExtra(EXTRA_BASE, pageUrl?.substringBeforeLast("/"))
+                .putExtra(EXTRA_BASE, base)
             runCatching { ContextCompat.startForegroundService(context, intent) }
+                .onFailure { Log.w("SOUND", "Çalma hizmeti başlatılamadı", it) }
         }
     }
 }

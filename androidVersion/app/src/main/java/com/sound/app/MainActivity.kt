@@ -10,6 +10,7 @@ import android.net.ConnectivityManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.OpenableColumns
 import android.provider.Settings
 import android.view.Gravity
@@ -103,24 +104,7 @@ class MainActivity : ComponentActivity() {
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) WebView.setWebContentsDebuggingEnabled(true)
 
         root = FrameLayout(this).apply { setBackgroundColor(BLACK) }
-        web = WebView(this).apply {
-            setBackgroundColor(BLACK)
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            settings.mediaPlaybackRequiresUserGesture = false  // sıradaki şarkıya kendiliğinden geçebilsin
-            settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-            settings.allowFileAccess = false
-            setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)  // ekran kapalıyken de müzik sürsün
-            overScrollMode = View.OVER_SCROLL_NEVER
-            addJavascriptInterface(Native(), "SoundNative")
-            webViewClient = Client()
-            webChromeClient = object : WebChromeClient() {
-                override fun onConsoleMessage(m: ConsoleMessage): Boolean {
-                    Log.i("SOUNDjs", "${m.message()} @${m.lineNumber()}")
-                    return true
-                }
-            }
-        }
+        web = createWeb()
         root.addView(web, FrameLayout.LayoutParams(-1, -1))
         splash = ImageView(this).apply {
             assets.open("logo.png").use { setImageBitmap(BitmapFactory.decodeStream(it)) }
@@ -152,6 +136,61 @@ class MainActivity : ComponentActivity() {
             val url = backend.callAttr("start", data, Native()).toString()
             runOnUiThread { web.loadUrl(url) }
         }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun createWeb() = WebView(this).apply {
+        setBackgroundColor(BLACK)
+        settings.javaScriptEnabled = true
+        settings.domStorageEnabled = true
+        settings.mediaPlaybackRequiresUserGesture = false  // sıradaki şarkıya kendiliğinden geçebilsin
+        settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        settings.allowFileAccess = false
+        setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)  // ekran kapalıyken de müzik sürsün
+        overScrollMode = View.OVER_SCROLL_NEVER
+        addJavascriptInterface(Native(), "SoundNative")
+        webViewClient = Client()
+        webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(m: ConsoleMessage): Boolean {
+                Log.i("SOUNDjs", "${m.message()} @${m.lineNumber()}")
+                return true
+            }
+        }
+    }
+
+    /** Arayüz süreci öldü (çoğunlukla bellek yetmedi): yalnızca WebView yenilenir, çalıyorsa şarkı kaldığı yerden sürer. */
+    private fun rebuildWeb(dead: WebView) {
+        if (dead !== web) return
+        val url = dead.url
+        val resume = PlaybackService.isPlaying
+        root.removeView(dead)
+        dead.destroy()
+        web = createWeb()
+        root.addView(web, 0, FrameLayout.LayoutParams(-1, -1))
+        if (url != null) web.loadUrl(url)
+        if (resume) resumePlayback(RESUME_TRIES)
+    }
+
+    /** Sayfa ve oturum yüklenene kadar saniyede bir dener. */
+    private fun resumePlayback(tries: Int) {
+        if (tries <= 0 || isDestroyed) return
+        web.postDelayed({
+            web.evaluateJavascript("window.soundResume ? soundResume() : false") { done ->
+                if (done != "true") resumePlayback(tries - 1)
+            }
+        }, 1000)
+    }
+
+    /** Samsung gibi telefonlar pil tasarrufu için arka plandaki uygulamayı kapatabilir: ilk çalmada bir kez izin istenir. */
+    @SuppressLint("BatteryLife")
+    private fun askBatteryExemption() {
+        val prefs = getSharedPreferences("sound", MODE_PRIVATE)
+        if (prefs.getBoolean("battery_asked", false)) return
+        if (getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)) return
+        prefs.edit().putBoolean("battery_asked", true).apply()
+        runCatching {
+            startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
+        }.onFailure { Log.w("SOUND", "Pil izni ekranı açılamadı", it) }
     }
 
     private fun askNotificationPermission() {
@@ -200,6 +239,11 @@ class MainActivity : ComponentActivity() {
 
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) =
                     request.url.scheme != "https"
+
+                override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                    closeLogin(true)  // işlenmezse Android tüm uygulamayı kapatır
+                    return true
+                }
             }
         }
         CookieManager.getInstance().apply {
@@ -234,7 +278,7 @@ class MainActivity : ComponentActivity() {
         login = null
         loginWeb = null
         loginAddress = ""
-        if (notify) apiPool.execute { backend.callAttr("login_closed") }
+        if (notify) apiPool.execute { runCatching { backend.callAttr("login_closed") } }
     }
 
     override fun onDestroy() {
@@ -255,7 +299,7 @@ class MainActivity : ComponentActivity() {
         }
 
         override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
-            recreate()  // arayüz süreci öldüyse uygulama düşmesin, baştan aç
+            rebuildWeb(view)
             return true
         }
     }
@@ -308,12 +352,18 @@ class MainActivity : ComponentActivity() {
         fun pickFiles(multiple: Boolean): String = this@MainActivity.pickFiles(multiple)
 
         fun playerState(json: String) {
-            runOnUiThread { PlaybackService.update(this@MainActivity, JSONObject(json), web.url) }
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                val state = JSONObject(json)
+                PlaybackService.update(this@MainActivity, state, web.url)
+                if (state.optBoolean("playing") && hasWindowFocus()) askBatteryExemption()
+            }
         }
     }
 
     private companion object {
         const val BLACK = 0xFF000000.toInt()
         const val WHITE = 0xFFFFFFFF.toInt()
+        const val RESUME_TRIES = 30
     }
 }

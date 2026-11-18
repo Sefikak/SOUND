@@ -312,3 +312,26 @@ html.mobile #panel .p-card { background: #ffffff12; border-radius: 14px; }
 html.mobile #app.panel-open #panel { background: linear-gradient(180deg, #00000059 0%, #000000a6 45%, var(--bg) 90%), var(--m-art, none) center / cover no-repeat, var(--m-tint); }
 html.mobile #side .brand { height: 34px; padding: 2px 0 0; margin: 0 0 4px; }
 html.mobile #side .brand img, html.mobile #side .brand .logo-tint { height: 28px; width: auto; }
+
+/* ortak dinleme: odadayken küçük çaların üstünde kod ve kişi sayısı */
+#mListen { position: absolute; right: 10px; bottom: calc(100% + 6px); display: none; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: 99px;
+  background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; }
+#mListen svg { width: 15px; height: 15px; }
+#mListen.show { display: inline-flex; }
+.m-head-btns { display: flex; align-items: center; gap: 8px; }
+.round-btn.on { color: var(--accent-light); }
+
+/* çalınacak cihaz */
+html.mobile #dvChip { right: 10px; max-width: calc(100vw - 20px); }
+html.mobile #app.panel-open #dvChip { display: none; }
+.m-device { order: 3; display: grid; place-items: center; width: 36px; height: 36px; color: #fff; }
+.m-device svg { width: 22px; height: 22px; }
+
+/* profil ve mesajlar */
+.m-social { position: relative; }
+html.mobile .sc-page { padding: 16px 16px 24px; max-width: none; }
+html.mobile .sc-head { flex-wrap: wrap; }
+html.mobile .sc-page h1 { font-size: 24px; }
+html.mobile .sc-chat { height: calc(100dvh - 190px); max-height: none; min-height: 300px; }
+html.mobile .sc-row .pill { height: 32px; padding: 0 12px; font-size: 12.5px; }
+html.mobile .sc-input { font-size: 16px; }

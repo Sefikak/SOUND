@@ -126,7 +126,8 @@
       }),
     ];
     let html = `<div class="pad home-page"><div class="m-head"><h1>${greeting()}</h1>
-      <button class="round-btn" data-act="homeRefresh" title="Önerileri yenile">${I.refresh}</button></div>
+      <div class="m-head-btns"><button class="round-btn m-social" data-act="openSocial" title="Profil ve arkadaşlar">${I.person}</button><button class="round-btn ${dvRemote() ? "on" : ""}" data-act="openDevices" title="Çalınacak cihaz">${I.devices}</button><button class="round-btn ${LT.room ? "on" : ""}" data-act="openListen" title="Ortak dinleme">${I.listen}</button>
+      <button class="round-btn" data-act="homeRefresh" title="Önerileri yenile">${I.refresh}</button></div></div>
       <div class="quick">${quick.map(q => `<div class="q" data-act="open" data-page="${q.page}" data-ref="${esc(q.ref || "")}" data-src="${esc(q.src)}">${q.art}<b>${esc(q.title)}</b></div>`).join("")}</div>`;
 
     const recent = L.recent();
@@ -167,6 +168,26 @@
   const line = document.createElement("i");
   line.id = "mProg";
   $("#bar").appendChild(line);
+  /* ortak dinleme: odadayken küçük çaların üstünde kod ve kişi sayısı, dokununca oda açılır */
+  ACT.openListen = () => openListen();
+  const listenChip = document.createElement("button");
+  listenChip.id = "mListen";
+  listenChip.onclick = e => { e.stopPropagation(); openListen(); };
+  $("#bar").appendChild(listenChip);
+  const drawListenChip = () => {
+    listenChip.classList.toggle("show", !!LT.room && !S.panelOpen);
+    if (LT.room) listenChip.innerHTML = `${I.listen}${esc(LT.room)} · ${LT.members.length}`;
+    $('[data-act="openListen"]')?.classList.toggle("on", !!LT.room);
+  };
+  document.addEventListener("listenchange", drawListenChip);
+  /* okunmamış mesaj ve arkadaşlık isteği: ana sayfadaki profil düğmesinde sayı */
+  const drawSocial = () => {
+    const count = (SC.data?.incoming?.length || 0) + (SC.data?.friends || []).reduce((n, f) => n + f.unread, 0), b = $(".m-social");
+    if (b) b.innerHTML = I.person + (count ? `<i class="sc-badge">${count > 99 ? "99+" : count}</i>` : "");
+  };
+  document.addEventListener("socialbadge", drawSocial);
+  const homeRender = window.renderPage;
+  window.renderPage = keep => { homeRender(keep); drawSocial(); };
   let tintFor = null;
   /* tam ekran arka planı: kapak 12x12'ye küçültülüp büyütülür; yumuşak renk geçişi verir, bulanıklık efekti gibi işlemci yemez */
   const meshFrom = url => {
@@ -197,6 +218,7 @@
     }
     line.style.width = d ? Math.min(100, P.position() / d * 100) + "%" : "0";
     root.classList.toggle("m-idle", !t);
+    drawListenChip();
     if (t && t.id !== tintFor) {
       tintFor = t.id;
       coverColor(thumb(t)).then(c => { if (c && tintFor === t.id) root.style.setProperty("--m-tint", c); });
@@ -258,6 +280,9 @@
     now.id = "mNow";
     inner.insertBefore(now, inner.firstChild);
     now.append($(".p-head", inner), media, $("#pTitle"), center);
+    const pick = document.createElement("button");  // tam ekran çalarda çalınacak cihaz
+    pick.className = "m-device"; pick.dataset.act = "openDevices"; pick.title = "Çalınacak cihaz"; pick.innerHTML = I.devices;
+    $(".p-head", now).appendChild(pick);
   };
 
   let touch = null;
@@ -360,5 +385,11 @@
     return false;
   };
   window.soundSave = () => { if (api) api.save_session(sessionState()); };
+  /* arayüz süreci ölüp yeniden açıldı: oturum geri yüklenince şarkı kaldığı yerden sürer (MainActivity.resumePlayback) */
+  window.soundResume = () => {
+    if (!P.current) return false;
+    if (!P.isPlaying()) P.toggle();
+    return true;
+  };
   syncTabs();
 })();

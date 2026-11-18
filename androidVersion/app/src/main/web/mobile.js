@@ -24,9 +24,8 @@
   const icon = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
   const TABS = [
     ["home", "Ana sayfa", icon('<path d="M4 11 12 4l8 7v9h-5v-6H9v6H4z"/>')],
-    ["search", "Ara", icon('<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>')],
     ["library", "Kitaplık", icon('<path d="M4 4v16M9 4v16M14 4l6 16"/>')],
-    ["settings", "Ayarlar", icon('<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>')],
+    ["social", "Profil", icon('<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.5 4-7 8-7s7 2.5 8 7"/>')],
   ];
   const tabs = document.createElement("nav");
   tabs.id = "mTabs";
@@ -57,18 +56,18 @@
   const libOpen = on => { document.body.classList.toggle("m-lib", on); syncTabs(); };
   function syncTabs() {
     const lib = document.body.classList.contains("m-lib"), kind = S.page && S.page.kind;
-    const active = lib ? "library" : kind === "stats" ? "settings" : kind;  // istatistikler ayarların içinden açılır
+    const active = lib ? "library" : ["social", "person", "chat", "stats"].includes(kind) ? "social" : kind;  // ayarlar ve istatistikler profilin içinden açılır
     $$("#mTabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === active));
-    document.body.classList.toggle("m-home", kind === "home");  // ana sayfada arama çubuğu yok, Ara sekmesi var
+    document.body.classList.toggle("m-home", kind === "home");
+    const box = $("#searchInput");
+    if (kind === "home" && box.value && document.activeElement !== box) { box.value = ""; $("#searchClear").classList.add("hidden"); }  // ana sayfaya dönünce arama çubuğu boşalır
   }
   tabs.addEventListener("click", e => {
     const t = e.target.closest("[data-tab]");
     if (!t) return;
     const k = t.dataset.tab;
-    if (k === "settings") { $("#searchInput").blur(); libOpen(false); return openSettings(); }
     if (k === "library") return libOpen(!document.body.classList.contains("m-lib"));
     libOpen(false);
-    if (k === "search") { openPage("search"); $("#searchInput").focus(); return; }
     $("#searchInput").blur();
     openPage(k);
   });
@@ -77,7 +76,12 @@
     if (e.target.closest("#nav a, .li[data-page], .account")) setTimeout(() => libOpen(false));
   });
   const original = renderPage;
-  window.renderPage = keep => { original(keep); syncTabs(); };
+  ACT.openSettings = () => { $("#searchInput").blur(); openSettings(); };
+  window.renderPage = keep => {
+    original(keep);
+    syncTabs();
+    if (S.page.kind === "social") $("#scRoot").insertAdjacentHTML("beforebegin", `<div class="m-settings"><button class="pill" data-act="openSettings">${icon('<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>')}Ayarlar</button></div>`);
+  };
   // koddan açılan sayfa (Sanatçı Mix sonrası albüm, bildirimden açılan sayfa...) kitaplık ekranının arkasında kalmasın
   const originalOpen = openPage;
   window.openPage = (...args) => { libOpen(false); return originalOpen(...args); };
@@ -126,7 +130,7 @@
       }),
     ];
     let html = `<div class="pad home-page"><div class="m-head"><h1>${greeting()}</h1>
-      <div class="m-head-btns"><button class="round-btn m-social" data-act="openSocial" title="Profil ve arkadaşlar">${I.person}</button><button class="round-btn ${dvRemote() ? "on" : ""}" data-act="openDevices" title="Çalınacak cihaz">${I.devices}</button><button class="round-btn ${LT.room ? "on" : ""}" data-act="openListen" title="Ortak dinleme">${I.listen}</button>
+      <div class="m-head-btns"><button class="round-btn ${dvRemote() ? "on" : ""}" data-act="openDevices" title="Çalınacak cihaz">${I.devices}</button><button class="round-btn ${LT.room ? "on" : ""}" data-act="openListen" title="Ortak dinleme">${I.listen}</button>
       <button class="round-btn" data-act="homeRefresh" title="Önerileri yenile">${I.refresh}</button></div></div>
       <div class="quick">${quick.map(q => `<div class="q" data-act="open" data-page="${q.page}" data-ref="${esc(q.ref || "")}" data-src="${esc(q.src)}">${q.art}<b>${esc(q.title)}</b></div>`).join("")}</div>`;
 
@@ -180,14 +184,13 @@
     $('[data-act="openListen"]')?.classList.toggle("on", !!LT.room);
   };
   document.addEventListener("listenchange", drawListenChip);
-  /* okunmamış mesaj ve arkadaşlık isteği: ana sayfadaki profil düğmesinde sayı */
+  /* okunmamış mesaj ve arkadaşlık isteği: alt çubuktaki Profil sekmesinde sayı */
   const drawSocial = () => {
-    const count = (SC.data?.incoming?.length || 0) + (SC.data?.friends || []).reduce((n, f) => n + f.unread, 0), b = $(".m-social");
-    if (b) b.innerHTML = I.person + (count ? `<i class="sc-badge">${count > 99 ? "99+" : count}</i>` : "");
+    const count = (SC.data?.incoming?.length || 0) + (SC.data?.friends || []).reduce((n, f) => n + f.unread, 0), tab = $('#mTabs [data-tab="social"]');
+    $(".sc-badge", tab)?.remove();
+    if (count) tab.insertAdjacentHTML("beforeend", `<i class="sc-badge">${count > 99 ? "99+" : count}</i>`);
   };
   document.addEventListener("socialbadge", drawSocial);
-  const homeRender = window.renderPage;
-  window.renderPage = keep => { homeRender(keep); drawSocial(); };
   let tintFor = null;
   /* tam ekran arka planı: kapak 12x12'ye küçültülüp büyütülür; yumuşak renk geçişi verir, bulanıklık efekti gibi işlemci yemez */
   const meshFrom = url => {
@@ -204,6 +207,7 @@
   };
   /* kitaplıktaki Favoriler ve İndirilenler kartlarında şarkı sayısı */
   const navCount = {};
+  [...$('#nav a[data-page="downloads"]').childNodes].find(n => n.nodeType === 3).textContent = "İndirilenler";  // bilgisayarda Kütüphane
   for (const page of ["favorites", "downloads"]) {
     const small = document.createElement("small");
     small.className = "m-n";

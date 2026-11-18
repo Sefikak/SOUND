@@ -238,8 +238,27 @@ class Cloud:
             self._save_state()
 
     def _reset_sync(self):
-        for key in ("known", "cursor", "merged"):
+        for key in ("known", "cursor", "merged", "devices_key"):
             self.state.pop(key, None)
+
+    def devices_key(self):
+        """Hesabın cihazlarını buluşturan gizli anahtar. Hesabın kendi bilgisinde durur, yalnızca o oturumla okunur."""
+        try:
+            user = self._authed("GET", "/auth/v1/user") or {}
+            key = (user.get("user_metadata") or {}).get("sound_devices_key")
+            if not key:
+                self._authed("PUT", "/auth/v1/user", {"data": {"sound_devices_key": secrets.token_urlsafe(24)}})
+                user = self._authed("GET", "/auth/v1/user") or {}  # iki cihaz aynı anda yazdıysa kalan kazanır
+                key = (user.get("user_metadata") or {}).get("sound_devices_key")
+        except CloudError:
+            key = self.state.get("devices_key")  # sunucuya kısa süre ulaşılamadıysa bilinen anahtar
+        if not key:
+            raise CloudError("Cihaz anahtarı alınamadı.")
+        with self._lock:
+            if self.state.get("devices_key") != key:
+                self.state["devices_key"] = key
+                self._save_state()
+        return key
 
     def _forget_session(self):
         with self._lock:

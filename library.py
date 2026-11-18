@@ -499,6 +499,51 @@ class Library:
             self._save_album(album_id)
         self._notify()
 
+    def reorder_side(self, item_id, target_id, after):
+        """Kenar çubuğunda albümü ya da klasörü başka birinin önüne/arkasına taşır. Sıra zaten "created" alanından
+        geldiği için yalnızca o değişir: eski sürümler ve diğer cihazlar aynı sırayı ek bir kayıt olmadan görür."""
+        albums, folders = self.data["albums"], self.data["folders"]
+        if item_id == target_id:
+            return False
+        if item_id in folders and target_id in folders:
+            level, parent = self.folders(), None
+        elif item_id in albums and target_id in albums:
+            parent = albums[target_id].get("folder")
+            level = self.albums(parent)
+        else:
+            return False
+        others = [entry for entry in level if entry[0] != item_id]
+        index = [entry[0] for entry in others].index(target_id) + (1 if after else 0)
+        low = others[index - 1][1]["created"] if index else None
+        high = others[index][1]["created"] if index < len(others) else None
+        if low is None:
+            slot = high - 1
+        elif high is None:
+            slot = low + 1
+        else:
+            slot = (low + high) / 2
+        changed = [item_id]
+        item = albums[item_id] if item_id in albums else folders[item_id]
+        with self._tx():
+            if (low is not None and slot <= low) or (high is not None and slot >= high):
+                # Aynı zaman damgalı iki öğe ya da aralık bitti: bu seviye baştan numaralanır
+                ordered = others[:index] + [(item_id, item)] + others[index:]
+                base = ordered[0][1]["created"] if ordered[0][0] != item_id else others[0][1]["created"]
+                for step, (entry_id, entry) in enumerate(ordered):
+                    entry["created"] = base + step
+                changed = [entry[0] for entry in ordered]
+            else:
+                item["created"] = slot
+            if item_id in albums:
+                item["folder"] = parent
+            for entry_id in changed:
+                if entry_id in albums:
+                    self._save_album(entry_id)
+                else:
+                    self.db.execute("UPDATE folders SET created=? WHERE id=?", (folders[entry_id]["created"], entry_id))
+        self._notify()
+        return True
+
     def add_to_album(self, album_id, track):
         album = self.data["albums"][album_id]
         if track["id"] in album["tracks"]:

@@ -362,6 +362,28 @@ def cache_path(track_id):
     return os.path.join(CACHE_DIR, track_id + ".webm")
 
 
+def cache_valid(track_id):
+    """Önbellekte çalınabilir dosya var mı. Cihaz aniden kapanınca dosya boş ya da sıfırlarla dolu kalabilir;
+    böylesi silinir, şarkı yeniden YouTube'dan gelir."""
+    path = cache_path(track_id)
+    try:
+        with open(path, "rb") as f:
+            head = f.read(64)
+    except OSError:
+        return False
+    if any(head):
+        return True
+    drop_cache(track_id)
+    return False
+
+
+def drop_cache(track_id):
+    try:
+        os.remove(cache_path(os.path.basename(track_id)))
+    except OSError:
+        pass
+
+
 def _wav_path(track_id):
     return os.path.join(CACHE_DIR, track_id + ".wav")
 
@@ -369,7 +391,7 @@ def _wav_path(track_id):
 def cache_stream(track_id, url, headers, cancelled=None):
     """Akış adresinden sesi parça parça önbelleğe indirir (uçsuz istekleri YouTube yavaş verir)."""
     target = cache_path(track_id)
-    if os.path.exists(target):
+    if cache_valid(track_id):
         return target
     temp = target + ".part"
     headers = {k: v for k, v in (headers or {}).items() if k.lower() != "range"}
@@ -389,6 +411,10 @@ def cache_stream(track_id, url, headers, cancelled=None):
                     break
                 f.write(data)
                 position += len(data)
+            if total and position < total:
+                raise OSError("Önbellek dosyası yarım kaldı")
+            f.flush()
+            os.fsync(f.fileno())  # cihaz hemen kapansa da dosya diske yazılmış olsun
         os.replace(temp, target)
     finally:
         if os.path.exists(temp):
@@ -459,7 +485,7 @@ def fetch_for_library(track, progress=None, cancelled=None):
     target = os.path.join(MUSIC_DIR, stem + ".opus")
     if not os.path.exists(target):
         cached = cache_path(track["id"])
-        if os.path.exists(cached):
+        if cache_valid(track["id"]):
             if progress:
                 progress(0.5)
             _to_opus(cached, target)

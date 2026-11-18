@@ -32,6 +32,9 @@ IS_WINDOWS = os.name == "nt"
 import webview
 
 import cloud
+import listen
+import devices
+import social
 import downloader
 import lyricsfinder
 import mediakeys
@@ -314,6 +317,9 @@ class Backend:
         self.lib.subscribe(lambda: self.push("library", self.snapshot()))
         self.cloud = cloud.Cloud(self.lib, lambda status: self.push("cloud", status))
         self.cloud_login = None  # Google girişinin dönüşünü bekleyen yerel sunucu
+        self.listen = listen.Listen(lambda event: self.push("listen", event))
+        self.devices = devices.Devices(self.cloud, lambda event: self.push("devices", event))
+        self.social = social.Social(self.cloud, self.lib, lambda event: self.push("social", event))
         threading.Thread(target=self._event_loop, daemon=True).start()
 
     # ---------- arayüze bildirim ----------
@@ -592,6 +598,8 @@ class Backend:
         threading.Thread(target=self._self_update_loop, daemon=True).start()
         self.cloud.start()
         self.cloud.sync_now()
+        self.devices.start()
+        self.social.start()
         self.ensure_home()
 
     def _trim_cache(self):
@@ -688,7 +696,7 @@ class Backend:
         """Çalmak için ses (ve panel için görüntü) adresi. Şarkı önbellekteyse ses diskten gelir:
         anında başlar, internet gerekmez; görüntü istenirse yine YouTube'dan alınır."""
         track_id = track["id"]
-        cached = os.path.exists(downloader.cache_path(track_id))
+        cached = downloader.cache_valid(track_id)
         if cached and not video and not force:
             return {"audio": f"/cache/{track_id}.webm", "video": None, "expire": 0, "alt": None, "cached": True}
         data = self._stream_remote(track, force)
@@ -756,7 +764,7 @@ class Backend:
 
     def _cache_track(self, track_id):
         """Dinlenen şarkının sesini arka planda önbelleğe indir: tekrar dinlemek anında ve internetsiz olur."""
-        if self.lib.is_downloaded(track_id) or os.path.exists(downloader.cache_path(track_id)):
+        if self.lib.is_downloaded(track_id) or downloader.cache_valid(track_id):
             return
         source = mediaserver.stream_source(track_id, "audio")
         if not source:
@@ -1611,6 +1619,11 @@ class Api:
         self._b.lib.checkpoint("Albüm taşıma")
         self._b.lib.move_album(album_id, folder_id)
 
+    def reorder_side(self, item_id, target_id, after):
+        self._b.lib.checkpoint("Kitaplık sıralaması")
+        if not self._b.lib.reorder_side(item_id, target_id, after):
+            self._b.lib.drop_checkpoint()
+
     def add_to_album(self, album_id, track):
         self._b.lib.checkpoint("Albüme ekleme")
         return self._b.lib.add_to_album(album_id, plain_track(track))
@@ -1731,6 +1744,34 @@ class Api:
         return self._b.auth_status()
 
     # SOUND hesabı
+    def listen_status(self):
+        return self._b.listen.status()
+
+    def listen_create(self, name):
+        return self._b.listen.create(name)
+
+    def listen_join(self, code, name):
+        return self._b.listen.join(code, name)
+
+    def listen_leave(self):
+        return self._b.listen.leave()
+
+    def listen_send(self, kind, data):
+        return self._b.listen.send(kind, data)
+
+    def drop_cache(self, track_id):
+        """Önbellekteki dosya çalınamadı: silinir, şarkı yeniden YouTube'dan alınır."""
+        downloader.drop_cache(track_id)
+
+    def social(self, method, args=None):
+        return self._b.social.call(method, args or [])
+
+    def devices_status(self):
+        return self._b.devices.status()
+
+    def devices_send(self, kind, data, to=None):
+        return self._b.devices.send(kind, data, to)
+
     def cloud_status(self):
         return self._b.cloud.status()
 

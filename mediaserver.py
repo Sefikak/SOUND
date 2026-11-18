@@ -9,6 +9,7 @@
              başlıklarıyla verir; oynatıcı bu başlıkları gönderemediği için akış buradan aktarılır
 """
 import hashlib
+import http.client
 import mimetypes
 import os
 import re
@@ -29,7 +30,12 @@ VIDEO_ID = re.compile(r"^[\w-]{11}$")
 STREAM_PATH = re.compile(r"^/stream/([\w-]{11})/(audio|video)$")
 FIRST_CHUNK = 256 * 1024       # akışın ilk parçası: küçük, çalma hemen başlasın
 NEXT_CHUNK = 2 * 1024 * 1024   # sonraki parçalar
+UPSTREAM_RETRIES = 4           # YouTube bağlantısı koptuğunda art arda deneme sayısı
 _streams = {}  # şarkı kimliği -> {"audio": (adres, başlıklar, açılış zamanı), "video": (...)}
+
+
+class _UpstreamLost(Exception):
+    """YouTube'dan okuma yarıda kesildi (oynatıcıya yazma hatalarından ayırmak için)."""
 
 
 def register_stream(video_id, kind, url, headers, available_at=0):
@@ -181,12 +187,20 @@ class Handler(BaseHTTPRequestHandler):
             return urllib.request.urlopen(request, timeout=20)
 
         chunk = FIRST_CHUNK
-        try:
-            upstream = fetch(start, start + chunk - 1 if wanted_end is None else min(wanted_end, start + chunk - 1))
-        except urllib.error.HTTPError as error:
-            _log_stream_error(video_id, kind, start, error)
-            self._error(error.code)  # 403: adres eskimiş; arayüz yenisini ister
-            return
+        attempt = 0
+        while True:
+            try:
+                upstream = fetch(start, start + chunk - 1 if wanted_end is None else min(wanted_end, start + chunk - 1))
+                break
+            except urllib.error.HTTPError as error:
+                _log_stream_error(video_id, kind, start, error)
+                self._error(error.code)  # 403: adres eskimiş; arayüz yenisini ister
+                return
+            except (OSError, http.client.HTTPException):
+                attempt += 1
+                if attempt > UPSTREAM_RETRIES:
+                    raise
+                time.sleep(attempt)
         total = re.search(r"/(\d+)", upstream.headers.get("Content-Range") or "")
         total = int(total.group(1)) if total else start + int(upstream.headers.get("Content-Length") or 0)
         end = total - 1 if wanted_end is None else min(wanted_end, total - 1)
@@ -199,18 +213,42 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         position = start
+        failures = 0
         while True:
-            with upstream:
-                while True:
-                    data = upstream.read(64 * 1024)
-                    if not data:
-                        break
-                    self.wfile.write(data)
-                    position += len(data)
+            before = position
+            try:
+                with upstream:
+                    while True:
+                        try:
+                            data = upstream.read(64 * 1024)
+                        except (OSError, http.client.HTTPException) as error:
+                            raise _UpstreamLost() from error
+                        if not data:
+                            break
+                        self.wfile.write(data)  # oynatıcı bağlantıyı keserse hata yukarı gider, yeniden denenmez
+                        position += len(data)
+                        failures = 0
+            except _UpstreamLost:
+                pass
             if position > end:
                 return
-            chunk = NEXT_CHUNK
-            upstream = fetch(position, min(end, position + chunk - 1))
+            if position == before:  # hiç veri gelmedi: sonsuza dek dönmesin
+                failures += 1
+                if failures > UPSTREAM_RETRIES:
+                    raise TimeoutError("YouTube akışı kesildi")
+                time.sleep(failures)
+            # Bağlantı parça ortasında koptuysa kalan yerden yeniden istenir; şarkı durmasın
+            while True:
+                try:
+                    upstream = fetch(position, min(end, position + NEXT_CHUNK - 1))
+                    break
+                except urllib.error.HTTPError:
+                    raise  # adres eskimiş: arayüz yenisini ister
+                except (OSError, http.client.HTTPException):
+                    failures += 1
+                    if failures > UPSTREAM_RETRIES:
+                        raise
+                    time.sleep(failures)
 
     def _file(self, path, cache):
         if not path:

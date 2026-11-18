@@ -45,6 +45,11 @@ const I = {
   video: stroke('<rect x="3" y="5" width="14" height="14" rx="2"/><path d="m17 10 4-3v10l-4-3"/>', 2),
   music: stroke('<path d="M9 18V5l11-2v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>', 2),
   undo: stroke('<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>', 2.4),
+  listen: stroke('<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="2.5" y="14" width="5" height="7" rx="2"/><rect x="16.5" y="14" width="5" height="7" rx="2"/>', 2),
+  devices: stroke('<rect x="2.5" y="4" width="14" height="11" rx="1.5"/><path d="M6 19h7"/><rect x="15.5" y="9" width="6" height="11" rx="1.5" fill="var(--black, #000)"/>', 2),
+  laptop: stroke('<rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/>', 2),
+  phone: stroke('<rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18h2"/>', 2),
+  person: stroke('<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.5 4-7 8-7s7 2.5 8 7"/>', 2),
   minus: stroke('<circle cx="12" cy="12" r="9"/><path d="M8 12h8"/>', 2),
   radio: stroke('<circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5"/>', 2),
   user: stroke('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>', 2),
@@ -376,6 +381,7 @@ async function openSettings() {
       $("#setBody", box).innerHTML = `
         <div class="set-sec">Dinleme</div>
         <div class="set-row"><div><b>İstatistikler</b><p>Dinleme süren, en çok dinlediğin şarkılar ve sanatçılar.</p></div><button class="pill" data-x="stats">Aç</button></div>
+        <div class="set-row"><div><b>Ortak dinleme</b><p>Oda aç, kodu arkadaşlarınla paylaş; aynı şarkıyı aynı anda dinleyin.</p></div><button class="pill" data-x="listen">${LT.room ? "Odayı aç" : "Başlat"}</button></div>
         <div class="set-sec">Kişiselleştir</div>
         <div class="set-row"><div><b>Görünüm ve yerleşim</b><p>Renkler, alev, boyut, kenar çubuğunun ve düğmelerin yeri.</p></div><button class="pill" data-x="customize">Kişiselleştir</button></div>
         ${document.documentElement.classList.contains("mobile") ? "" : `<div class="set-row"><div><b>Klavye kısayolları</b><p>Çal/duraklat, şarkı geçme, ses, sarma ve diğerleri için tuşları kendin seç.</p></div><button class="pill" data-x="shortcuts">Düzenle</button></div>`}
@@ -422,6 +428,7 @@ async function openSettings() {
       else if (x === "shortcuts") { done(null); openShortcuts(); }
       else if (x === "audioFx") { done(null); openAudioFx(); }
       else if (x === "stats") { done(null); openPage("stats"); }
+      else if (x === "listen") { done(null); openListen(); }
       else if (x === "restart") api.restart_app();
       else if (x === "checkUpdate") {
         const b = e.target.closest("[data-x]");
@@ -942,7 +949,8 @@ function renderPage(keep = false) {
   S.lists = {};
   S.plShown = {};
   const page = $("#page");
-  page.innerHTML = { home: pageHome, search: pageSearch, favorites: pageFavorites, downloads: pageDownloads, album: pageAlbum, playlist: pagePlaylist, artist: pageArtist, stats: pageStats }[kind](ref);
+  page.innerHTML = { home: pageHome, search: pageSearch, favorites: pageFavorites, downloads: pageDownloads, album: pageAlbum, playlist: pagePlaylist, artist: pageArtist, stats: pageStats,
+                     social: pageSocial, person: pagePerson, chat: pageChat }[kind](ref);
   S.signature = pageSignature();
   $$("#nav a").forEach(a => a.classList.toggle("on", a.dataset.page === kind));
   $("#backBtn").disabled = !S.back.length;
@@ -1306,7 +1314,7 @@ function dlStatus(key) {
 
 /* ---------- kenar çubuğu ---------- */
 function renderSide() {
-  const sig = JSON.stringify([S.lib.folders, Object.entries(S.lib.albums).map(([id, a]) => [id, a.name, a.folder, a.tracks.length, a.tracks[0]]),
+  const sig = JSON.stringify([S.lib.folders, Object.entries(S.lib.albums).map(([id, a]) => [id, a.name, a.folder, a.created, a.tracks.length, a.tracks[0]]),
     [...S.expanded], S.page.kind === "album" ? S.page.ref : null]);
   if (sig === S.sideSignature) return;
   S.sideSignature = sig;
@@ -1340,6 +1348,7 @@ let A = AUDIO[0];  // şu an çalan; diğeri sıradaki şarkıyı önceden yükl
 const other = () => AUDIO[A === AUDIO[0] ? 1 : 0];
 const onAudio = (name, fn) => AUDIO.forEach(el => el.addEventListener(name, e => { if (e.target === A) fn(e); }));
 let masterVolume = 0.7;
+const STREAM_RETRIES = 3, STALL_MS = 14000;
 const P = {
   queue: [], order: [], pos: -1, source: null, shuffle: false, repeat: "off", current: null,
   loading: false, token: 0, resumeAt: null, streams: {}, local: false, retried: false, countedPlay: null,
@@ -1495,9 +1504,17 @@ const P = {
     const track = this.current, token = ++this.token, at = this.resumeAt ? this.resumeAt[1] : A.currentTime;
     this.loading = true;
     playerChanged();
-    const res = await api.stream(track, true);
+    const res = await api.stream(track, true).catch(e => ({ error: e.message || "Bağlantı hatası" }));
     if (token !== this.token) return;
-    if (res.error) return this.failed(res, track);
+    if (res.error) {
+      if (!res.age && !res.unavailable && (this.retried || 0) < STREAM_RETRIES) {  // bağlantı kısa süre kopmuş olabilir
+        this.retried = (this.retried || 0) + 1;
+        this.resumeAt = [track.id, at];
+        setTimeout(() => { if (token === this.token) this.refreshStream(); }, 3000);
+        return;
+      }
+      return this.failed(res, track);
+    }
     this.streams[track.id] = res;
     this.resumeAt = null;
     this.load(res.audio, at);
@@ -1571,6 +1588,546 @@ const P = {
   },
 };
 
+/* ---------- ortak dinleme (listen.py) ----------
+   Odaya ilk giren yöneticidir: kuyruk onda durur, durumu herkese o yayınlar. Üyeler kendi cihazında aynı şarkıyı çalar ve
+   yöneticinin konumuna yaklaşır. Üyenin bastığı düğmeler yöneticiye komut olarak gider; sonucu yeni durumla geri gelir. */
+const LT = { room: null, me: null, host: null, isHost: false, members: [], connected: false, offset: 0, control: true,
+             seq: 0, qv: 0, last: null, from: null, rseq: -1, sig: "", timer: null, ignoreSeek: false, helloTo: null, retryAt: 0, box: null };
+const listenGuest = () => !!LT.room && !!LT.host && !LT.isHost;
+const listenExpected = () => {
+  const d = LT.last;
+  if (!d) return A.currentTime;
+  return d.playing ? d.at + Math.max(0, Date.now() + LT.offset - d.ts) / 1000 : d.at;
+};
+function listenPublish(full) {
+  if (!LT.room || !LT.isHost) return;
+  const start = Math.max(0, P.pos - 1), active = !P.loading && !!A.getAttribute("src") && !A.paused;
+  const data = { seq: ++LT.seq, playing: active, at: P.position(), ts: Date.now(), qv: LT.qv, control: LT.control, track: P.current ? plain(P.current) : null };
+  if (full) {
+    data.queue = P.order.slice(start, start + 60).map(i => plain(P.queue[i]));
+    data.pos = P.pos - start;
+  }
+  api.listen_send("state", data);
+}
+function listenChanged(queue = false, force = false) {
+  if (!LT.room || !LT.isHost) return;
+  if (queue) LT.qv++;
+  const sig = `${P.current?.id}|${P.loading}|${A.paused}|${LT.qv}|${LT.control}`;
+  if (sig === LT.sig && !force) return;
+  LT.sig = sig;
+  clearTimeout(LT.timer);
+  LT.timer = setTimeout(() => listenPublish(true), 120);
+}
+function listenSeek(at) {
+  LT.ignoreSeek = true;
+  A.currentTime = at;
+}
+function listenSync() {
+  const d = LT.last;
+  if (!listenGuest() || !d) return;
+  if (!d.track) { if (!A.paused) A.pause(); return; }
+  if (!P.current || P.current.id !== d.track.id || P.loading) return;
+  if (!A.getAttribute("src")) {  // şarkı açılamadıysa sık sık denemesin
+    if (d.playing && Date.now() > LT.retryAt) { LT.retryAt = Date.now() + 20000; P.resumeAt = [d.track.id, listenExpected()]; P.playCurrent(); }
+    return;
+  }
+  if (!d.playing) {
+    if (!A.paused) A.pause();
+    A.playbackRate = 1;
+    if (A.readyState >= 1 && Math.abs(A.currentTime - d.at) > 1) listenSeek(d.at);
+    return;
+  }
+  if (A.paused) { A.play().catch(() => {}); return; }
+  if (A.readyState < 2 || A.seeking) return;
+  const want = listenExpected(), drift = A.currentTime - want, end = isFinite(A.duration) ? A.duration : P.duration();
+  if (Math.abs(drift) > 2) { if (!end || want < end - 1) listenSeek(want); A.playbackRate = 1; }
+  else A.playbackRate = Math.abs(drift) > 0.25 ? (drift > 0 ? 0.96 : 1.04) : 1;  // küçük farkı duyulmadan kapatır
+}
+function listenApply(m) {
+  const d = m.data;
+  if (m.from === LT.from && d.seq <= LT.rseq) return;
+  LT.from = m.from; LT.rseq = d.seq; LT.last = d; LT.control = d.control;
+  if (d.queue) {
+    P.queue = d.queue; P.order = d.queue.map((_, i) => i); P.pos = Math.min(d.pos, Math.max(0, d.queue.length - 1));
+    P.prepared = null; LT.qv = d.qv;
+    renderQueue();
+  } else if (d.qv !== LT.qv) api.listen_send("hello", {});
+  if (d.track && (!P.current || P.current.id !== d.track.id)) {
+    if (P.queue[P.order[P.pos]]?.id !== d.track.id) { P.queue = [d.track]; P.order = [0]; P.pos = 0; }
+    P.resumeAt = [d.track.id, listenExpected()];
+    LT.retryAt = Date.now() + 20000;
+    P.playCurrent();
+    return;
+  }
+  listenSync();
+  LT.box?.draw();
+}
+function listenCommand(m) {
+  if (LT.isHost && LT.control) playerCommand(m.data, m.name);
+}
+/* ortak dinlemede üyeden, cihazlar arasında kumandadan gelen komut */
+function playerCommand(c, who) {
+  const index = id => P.order.findIndex((q, i) => i >= P.pos && P.queue[q]?.id === id);
+  ({
+    toggle: () => P.toggle(), play: () => { if (!P.isPlaying()) P.toggle(); }, pause: () => { if (P.isPlaying()) P.toggle(); },
+    next: () => P.next(), previous: () => P.previous(), shuffle: () => P.toggleShuffle(), repeat: () => P.cycleRepeat(),
+    seek: () => { if (A.getAttribute("src")) A.currentTime = c.at; },
+    jump: () => { const i = index(c.id); if (i >= 0) P.jumpTo(i); },
+    remove: () => { const i = index(c.id); if (i > P.pos) P.removeAt(i); },
+    clear: () => P.clearQueue(), playlist: () => P.playList(c.tracks, c.index),
+    add: () => { c.next ? P.playNext(c.track) : P.enqueue(c.track); if (who) toast(`${who} ekledi: ${short(c.track.title, 40)}`); },
+  })[c.cmd]?.();
+}
+function listenStatus(st) {
+  if (!st.active) return listenReset();
+  const known = LT.room === st.code, before = new Map(LT.members.map(p => [p.id, p.name])), wasHost = LT.isHost;
+  Object.assign(LT, { room: st.code, me: st.me, host: st.host, members: st.members, connected: st.connected, offset: st.offset || 0 });
+  LT.isHost = !!st.host && st.host === st.me;
+  if (known && before.size) {
+    const now = new Set(st.members.map(p => p.id));
+    st.members.forEach(p => { if (!before.has(p.id) && p.id !== st.me) toast(`${p.name} odaya katıldı`); });
+    before.forEach((name, id) => { if (!now.has(id) && id !== st.me && st.connected) toast(`${name} odadan ayrıldı`); });
+  }
+  if (LT.isHost && !wasHost) { A.playbackRate = 1; LT.last = null; LT.sig = ""; listenChanged(true, true); }
+  if (listenGuest() && LT.helloTo !== st.host) { LT.helloTo = st.host; api.listen_send("hello", {}); }
+  listenBadge();
+  LT.box?.draw();
+}
+function listenReset() {
+  clearTimeout(LT.timer);
+  Object.assign(LT, { room: null, me: null, host: null, isHost: false, members: [], connected: false, offset: 0, control: true,
+                      last: null, from: null, rseq: -1, sig: "", helloTo: null });
+  A.playbackRate = 1;
+  listenBadge();
+  LT.box?.draw();
+}
+function listenEvent(e) {
+  if (e.type === "status") listenStatus(e.status);
+  else if (e.type === "closed") { listenReset(); if (e.error) { toast(e.error, true); LT.box?.say(e.error); } }
+  else if (e.type === "msg") {
+    if (e.kind === "state" && listenGuest()) listenApply(e);
+    else if (e.kind === "hello") listenPublish(true);
+    else if (e.kind === "cmd") listenCommand(e);
+  }
+}
+function listenBadge() {
+  const b = $("#listenBtn");
+  b.classList.toggle("on", !!LT.room);
+  b.title = LT.room ? `Ortak dinleme: ${LT.room} · ${LT.members.length} kişi` : "Ortak dinleme";
+  document.dispatchEvent(new CustomEvent("listenchange"));
+}
+setInterval(() => { if (LT.room && LT.isHost) listenPublish(false); }, 4000);
+setInterval(listenSync, 1000);
+onAudio("seeked", () => {
+  if (!LT.room) return;
+  if (LT.ignoreSeek) { LT.ignoreSeek = false; return; }
+  if (LT.isHost) listenChanged(false, true);
+  else if (listenGuest() && LT.control && !P.loading && Math.abs(A.currentTime - listenExpected()) > 2.5) api.listen_send("cmd", { cmd: "seek", at: A.currentTime });
+});
+/* üyede çalar düğmeleri yerel kuyruğu değil, yöneticiyi yönetir */
+const LISTEN_CMD = {
+  toggle: () => ({ cmd: "toggle" }), next: auto => auto ? null : { cmd: "next" }, previous: () => ({ cmd: "previous" }),
+  playList: (tracks, index) => ({ cmd: "playlist", tracks: tracks.slice(index, index + 100).map(plain), index: 0 }),
+  enqueue: t => ({ cmd: "add", track: plain(t) }), playNext: t => ({ cmd: "add", track: plain(t), next: true }),
+  jumpTo: i => ({ cmd: "jump", id: P.queue[P.order[i]]?.id }), removeAt: i => ({ cmd: "remove", id: P.queue[P.order[i]]?.id }),
+  clearQueue: () => ({ cmd: "clear" }), toggleShuffle: () => ({ cmd: "shuffle" }), cycleRepeat: () => ({ cmd: "repeat" }), move: () => null,
+};
+for (const [name, make] of Object.entries(LISTEN_CMD)) {
+  const real = P[name];
+  P[name] = function (...args) {
+    if (!listenGuest()) return real.apply(this, args);
+    const command = make(...args);
+    if (!command) return;
+    if (!LT.control) return toast("Oda sahibi kontrolü kapattı", true);
+    api.listen_send("cmd", command);
+  };
+}
+const realFailed = P.failed;
+P.failed = function (res, track) {  // üyede açılamayan şarkı herkesi sıradakine geçirmesin
+  if (!listenGuest()) return realFailed.call(this, res, track);
+  this.loading = false;
+  toast(`Bu cihazda açılamadı: ${short(track.title, 40)}`, true);
+  playerChanged();
+};
+async function listenCopy(text) {
+  try { await navigator.clipboard.writeText(text); }
+  catch {
+    const el = Object.assign(document.createElement("textarea"), { value: text });
+    document.body.appendChild(el); el.select(); document.execCommand("copy"); el.remove();
+  }
+  toast("Oda kodu kopyalandı");
+}
+async function openListen() {
+  if (LT.box) return;
+  await modal(`<h3>Ortak dinleme</h3><div id="lnBody"></div>`, (box, done) => {
+    const body = $("#lnBody", box);
+    let message = "", busy = false;
+    const name = () => ($('[data-f="name"]', body)?.value || S.settings.listen_name || "").trim();
+    const draw = () => {
+      if (!LT.room) {
+        const code = $('[data-f="code"]', body)?.value || "";
+        body.innerHTML = `<p>Oda aç, kodu arkadaşlarına gönder. Herkes aynı şarkıyı aynı anda dinler, sırayı birlikte yönetir.</p>
+          <input class="text" data-f="name" maxlength="24" placeholder="Adın" value="${esc(name())}">
+          <button class="pill fill ln-wide" data-x="create" ${busy ? "disabled" : ""}>Oda aç</button>
+          <div class="ln-or"><span>ya da koda katıl</span></div>
+          <div class="ln-join"><input class="text" data-f="code" maxlength="7" placeholder="Oda kodu" autocomplete="off" spellcheck="false" value="${esc(code)}">
+            <button class="pill" data-x="join" ${busy ? "disabled" : ""}>Katıl</button></div>
+          <div class="status err">${esc(message)}</div>
+          <div class="row-btns"><button class="pill" data-x="close">Kapat</button></div>`;
+        return;
+      }
+      const owner = LT.members.find(p => p.id === LT.host);
+      body.innerHTML = `<p>${LT.connected ? "Bu kodu arkadaşlarına gönder." : "Bağlanıyor…"}</p>
+        <button class="ln-code" data-x="copy" title="Kodu kopyala">${esc(LT.room)}<small>Kopyala</small></button>
+        <div class="set-sec">Odadakiler (${LT.members.length})</div>
+        <div class="ln-people">${LT.members.map(p => `<div class="ln-person"><b>${esc(p.name)}</b><span>${[p.id === LT.host ? "Oda sahibi" : "", p.id === LT.me ? "Sen" : ""].filter(Boolean).join(" · ")}</span></div>`).join("")}</div>
+        ${LT.isHost ? `<div class="set-row"><div><b>Herkes kontrol edebilir</b><p>Kapalıyken şarkıyı ve sırayı yalnızca sen değiştirirsin.</p></div><button class="switch ${LT.control ? "on" : ""}" data-x="control"><i></i></button></div>`
+          : `<p class="ln-note">${LT.control ? "Çal, geç ve sıraya ekle düğmeleri herkes için çalışır." : `Kontrol ${esc(owner?.name || "oda sahibi")} tarafından kapatıldı.`}</p>`}
+        <div class="row-btns"><button class="textbtn" data-x="leave">Odadan çık</button><button class="pill fill" data-x="close">Kapat</button></div>`;
+    };
+    const open = async job => {
+      const who = name();
+      if (!who) { message = "Önce adını yaz."; return draw(); }
+      busy = true; message = ""; draw();
+      S.settings = { ...S.settings, listen_name: who };
+      api.update_settings({ listen_name: who });
+      const r = await job(who);
+      busy = false;
+      if (r.error) { message = r.error; return draw(); }
+      listenStatus(r);
+    };
+    body.addEventListener("click", async e => {
+      const x = e.target.closest("[data-x]")?.dataset.x;
+      if (x === "close") done(null);
+      else if (x === "create") open(who => api.listen_create(who));
+      else if (x === "join") {
+        const code = $('[data-f="code"]', body).value;
+        if (!code.trim()) { message = "Oda kodunu yaz."; return draw(); }
+        open(who => api.listen_join(code, who));
+      }
+      else if (x === "copy") listenCopy(LT.room);
+      else if (x === "control") { LT.control = !LT.control; listenChanged(false, true); draw(); }
+      else if (x === "leave") { await api.listen_leave(); listenReset(); toast("Odadan çıkıldı"); }
+    });
+    LT.box = { draw, say: text => { message = text; draw(); } };
+    draw();
+  });
+  LT.box = null;
+}
+
+/* ---------- cihazlar arası çalma (devices.py) ----------
+   Müziği yalnızca bir cihaz çalar. Diğerleri kumanda olur: ekranda çalan cihazın şarkısı görünür, düğmeler ona komut gönderir. */
+const DV = { on: false, signed: false, me: null, devices: [], remote: null, np: null, rx: 0, seq: Date.now(), rseq: -1, live: false, sig: "", qv: 0, timer: null, wait: null, box: null, volAt: 0 };
+const dvRemote = () => !!DV.remote && !LT.room;
+const dvName = id => DV.devices.find(d => d.id === id)?.name || "Diğer cihaz";
+function dvQueue() {
+  const start = Math.max(0, P.pos - 1);
+  return { queue: P.order.slice(start, start + 100).map(i => plain(P.queue[i])), pos: P.pos - start };
+}
+function dvPublish(full) {
+  if (!DV.on || DV.remote || LT.room || !P.current || !DV.live) return;
+  const data = { seq: ++DV.seq, playing: P.isPlaying(), at: P.position(), ts: Date.now(), qv: DV.qv, track: plain(P.current), shuffle: P.shuffle, repeat: P.repeat, volume: volPos };
+  api.devices_send("np", full ? { ...data, ...dvQueue() } : data);
+}
+function dvChanged(queue = false, force = false) {
+  if (!DV.on || DV.remote || LT.room) return;
+  if (queue) DV.qv++;
+  if (P.isPlaying()) DV.live = true;
+  const sig = `${P.current?.id}|${P.isPlaying()}|${P.shuffle}|${P.repeat}|${DV.qv}`;
+  if (sig === DV.sig && !force) return;
+  DV.sig = sig;
+  clearTimeout(DV.timer);
+  DV.timer = setTimeout(() => dvPublish(true), 150);
+}
+function dvRelease() {
+  clearTimeout(DV.wait);
+  P.token++; P.loading = false; P.prepared = null;
+  finishFade(); unloadOther();
+  A.pause(); A.removeAttribute("src"); A.load();
+  DV.live = false;
+}
+function dvDetach(message) {
+  if (!DV.remote) return;
+  if (P.current && DV.np) P.resumeAt = [P.current.id, P.position()];
+  DV.remote = null; DV.np = null; DV.rseq = -1; DV.sig = "";
+  if (message) toast(message);
+  playerChanged();
+  dvDraw();
+}
+function dvState(m) {
+  const d = m.data;
+  if (LT.room) return;
+  if (m.from !== DV.remote) {
+    if (!d.playing || (DV.remote ? DV.np?.playing : P.isPlaying())) return;  // ikisi de çalıyorsa birbirine karışmazlar
+    dvRelease();
+    DV.remote = m.from; DV.rseq = -1;
+  }
+  if (d.seq <= DV.rseq) return;
+  DV.rseq = d.seq; DV.np = d; DV.rx = Date.now();
+  const changed = P.current?.id !== d.track.id;
+  P.current = d.track; P.shuffle = d.shuffle; P.repeat = d.repeat; P.resumeAt = [d.track.id, d.at];
+  if (d.queue) { P.queue = d.queue; P.order = d.queue.map((_, i) => i); P.pos = Math.min(d.pos, Math.max(0, d.queue.length - 1)); renderQueue(); }
+  playerChanged(changed);
+  dvDraw();
+}
+function dvTransfer(to) {
+  if (!P.current) return toast("Önce bir şarkı çal");
+  const at = P.position(), target = dvName(to);
+  api.devices_send("transfer", { ...dvQueue(), at, shuffle: P.shuffle, repeat: P.repeat }, to);
+  A.pause();
+  clearTimeout(DV.wait);
+  DV.wait = setTimeout(() => { toast(`${target} yanıt vermedi`, true); A.play().catch(() => {}); }, 9000);
+}
+function dvReceive(d) {
+  if (LT.room) return;
+  clearTimeout(DV.wait);
+  DV.remote = null; DV.np = null; DV.rseq = -1;
+  P.queue = d.queue; P.order = d.queue.map((_, i) => i); P.pos = d.pos; P.shuffle = d.shuffle; P.repeat = d.repeat; P.source = null;
+  P.resumeAt = [d.queue[d.pos].id, d.at];
+  DV.live = true;
+  P.playCurrent();
+  queueChanged();
+  toast("Çalma bu cihaza geçti");
+  dvDraw();
+}
+function dvCommand(c) {
+  if (LT.room || DV.remote) return;
+  if (c.cmd === "handoff") return dvTransfer(c.to);
+  if (c.cmd === "volume") { setVolume(c.v); return dvChanged(false, true); }
+  playerCommand(c);
+}
+function dvPick(id) {
+  if (LT.room) return toast("Ortak dinlemedeyken cihaz değiştirilemez", true);
+  if (DV.remote) { if (id !== DV.remote) api.devices_send("cmd", { cmd: "handoff", to: id }, DV.remote); }
+  else if (id !== DV.me) dvTransfer(id);
+}
+function dvStatus(st) {
+  Object.assign(DV, { on: st.connected, signed: st.signed_in, me: st.me, devices: st.devices });
+  if (DV.remote && !st.devices.some(d => d.id === DV.remote)) dvDetach("Diğer cihazla bağlantı kesildi");
+  dvDraw();
+}
+function dvEvent(e) {
+  if (e.type === "status") return dvStatus(e.status);
+  if (e.kind === "np") dvState(e);
+  else if (e.kind === "hello") dvPublish(true);
+  else if (e.kind === "cmd") dvCommand(e.data);
+  else if (e.kind === "transfer") dvReceive(e.data);
+}
+function dvDraw() {
+  const chip = $("#dvChip"), remote = dvRemote();
+  $("#deviceBtn").classList.toggle("on", remote);
+  $("#deviceBtn").title = remote ? `${dvName(DV.remote)} cihazında çalıyor` : "Çalınacak cihaz";
+  chip.classList.toggle("show", remote);
+  if (remote) chip.innerHTML = `${I.devices}<span>${esc(dvName(DV.remote))} cihazında çalıyor</span>`;
+  DV.box?.draw();
+}
+async function openDevices() {
+  if (DV.box) return;
+  await modal(`<h3>Çalınacak cihaz</h3><div id="dvBody"></div>`, (box, done) => {
+    const body = $("#dvBody", box);
+    const draw = () => {
+      if (!DV.signed) {
+        body.innerHTML = `<p>Cihazlarını görmek için hepsinde aynı hesapla giriş yap. Ayarlar > Hesap bölümünden giriş yapabilirsin.</p><div class="row-btns"><button class="pill" data-x="close">Kapat</button></div>`;
+        return;
+      }
+      const active = dvRemote() ? DV.remote : DV.me;
+      const rows = DV.devices.map(d => `<button class="dv-row${d.id === active ? " on" : ""}" data-dv="${esc(d.id)}">${d.kind === "phone" ? I.phone : I.laptop}
+        <span><b>${esc(d.name)}</b><small>${d.id === active ? (d.id === DV.me ? "Bu cihazda çalıyor" : "Şu an burada çalıyor") : d.id === DV.me ? "Bu cihaz" : "Buraya geçir"}</small></span></button>`).join("");
+      const volume = dvRemote() && DV.np ? `<div class="set-sec">${esc(dvName(DV.remote))} ses düzeyi</div><input type="range" class="dv-vol" min="0" max="100" value="${Math.round(DV.np.volume * 100)}">` : "";
+      body.innerHTML = `${DV.on ? "" : `<p>Bağlanıyor…</p>`}<div class="dv-list">${rows}</div>
+        ${DV.devices.length < 2 && DV.on ? `<p class="ln-note">Aynı hesapla SOUND'u açtığın diğer cihazlar burada görünür.</p>` : ""}${volume}
+        <div class="row-btns"><button class="pill" data-x="close">Kapat</button></div>`;
+    };
+    body.addEventListener("click", e => {
+      if (e.target.closest('[data-x="close"]')) return done(null);
+      const row = e.target.closest("[data-dv]");
+      if (row) { dvPick(row.dataset.dv); done(null); }
+    });
+    body.addEventListener("input", e => {
+      if (!e.target.classList.contains("dv-vol") || Date.now() - DV.volAt < 120) return;
+      DV.volAt = Date.now();
+      api.devices_send("cmd", { cmd: "volume", v: e.target.value / 100 }, DV.remote);
+    });
+    body.addEventListener("change", e => {
+      if (e.target.classList.contains("dv-vol")) api.devices_send("cmd", { cmd: "volume", v: e.target.value / 100 }, DV.remote);
+    });
+    DV.box = { draw };
+    draw();
+  });
+  DV.box = null;
+}
+/* ---------- profil, arkadaşlar ve mesajlar (social.py) ---------- */
+const SC = { data: null, results: null, query: "", person: null, peer: null, msgs: [], searchTimer: null };
+const scName = p => p?.display_name || p?.username || "Kullanıcı";
+const scAvatar = (p, size) => tile(p?.id || "x", size, `<b style="font-size:${Math.round(size * .42)}px;color:#fff">${esc(scName(p).slice(0, 1).toLocaleUpperCase("tr"))}</b>`, null, size / 2);
+const scRow = (p, side = "") => `<div class="sc-row" data-sc="person" data-id="${esc(p.id)}">${scAvatar(p, 44)}
+  <div class="li-text"><div class="li-t">${esc(scName(p))}</div><div class="li-s">@${esc(p.username)}</div></div>${side}</div>`;
+function scBadge() {
+  const d = SC.data, count = d?.me ? d.incoming.length + d.friends.reduce((n, f) => n + f.unread, 0) : 0, b = $("#profileBtn");
+  b.innerHTML = I.person + (count ? `<i class="sc-badge">${count > 99 ? "99+" : count}</i>` : "");
+  document.dispatchEvent(new CustomEvent("socialbadge", { detail: count }));
+}
+async function scRefresh() {
+  const r = await api.social("overview", []);
+  if (r.error) return r;
+  SC.data = r;
+  scBadge();
+  if (S.page.kind === "social") scDraw();
+  else if (S.page.kind === "person") scPerson();
+  return r;
+}
+function pageSocial() { setTimeout(() => scRefresh().then(r => { if (r?.error) scFail(r.error); })); return `<div class="pad sc-page" id="scRoot"><p class="sc-note">Yükleniyor…</p></div>`; }
+function pagePerson(id) { setTimeout(() => scPerson(id)); return `<div class="pad sc-page" id="scRoot"><p class="sc-note">Yükleniyor…</p></div>`; }
+function pageChat(id) { setTimeout(() => scChat(id)); return `<div class="pad sc-page sc-chat" id="scRoot"><p class="sc-note">Yükleniyor…</p></div>`; }
+function scFail(text) { const root = $("#scRoot"); if (root) root.innerHTML = `<p class="sc-note err">${esc(text)}</p>`; }
+function scForm(me) {
+  return `<h1>${me ? "Profili düzenle" : "Profilini oluştur"}</h1><p class="sc-note">Arkadaşların seni kullanıcı adınla bulur. E-postan kimseye gösterilmez.</p>
+    <div class="sc-form"><label>Kullanıcı adı<input class="sc-input" data-f="username" maxlength="20" spellcheck="false" autocomplete="off" value="${esc(me?.username || "")}"></label>
+    <label>Görünen ad<input class="sc-input" data-f="display_name" maxlength="40" value="${esc(me?.display_name || "")}"></label>
+    <label>Hakkında<textarea class="sc-input" data-f="bio" maxlength="300" rows="3">${esc(me?.bio || "")}</textarea></label>
+    <p class="sc-note err" id="scErr"></p><div class="sc-btns"><button class="pill accent" data-sc="save">Kaydet</button>${me ? `<button class="pill" data-sc="cancel">Vazgeç</button>` : ""}</div></div>`;
+}
+function scDraw() {
+  const root = $("#scRoot"), d = SC.data;
+  if (!root || S.page.kind !== "social" || !d) return;
+  if (!d.signed_in) { root.innerHTML = `<h1>Profil</h1><p class="sc-note">Arkadaş eklemek ve mesajlaşmak için SOUND hesabına giriş yap.</p><button class="pill accent" data-sc="login">Giriş yap</button>`; return; }
+  if (!d.me) { root.innerHTML = scForm(null); return; }
+  const kept = $('[data-f="find"]', root), focused = kept && document.activeElement === kept;
+  const results = SC.results == null ? "" : SC.results.length ? SC.results.map(p => scRow(p)).join("") : `<p class="sc-note">Kimse bulunamadı.</p>`;
+  root.innerHTML = `<div class="sc-head">${scAvatar(d.me, 84)}<div class="li-text"><h1>${esc(scName(d.me))}</h1><div class="li-s">@${esc(d.me.username)}</div>${d.me.bio ? `<p class="sc-bio">${esc(d.me.bio)}</p>` : ""}</div>
+      <button class="pill" data-sc="edit">Düzenle</button></div>
+    <input class="sc-input sc-find" data-f="find" maxlength="30" placeholder="Kullanıcı adıyla arkadaş ara" spellcheck="false" autocomplete="off" value="${esc(SC.query)}">
+    <div class="sc-list">${results}</div>
+    ${d.incoming.length ? `<h2>Gelen istekler</h2><div class="sc-list">${d.incoming.map(p => scRow(p, `<button class="pill accent" data-sc="accept" data-id="${esc(p.id)}">Kabul et</button><button class="pill" data-sc="decline" data-id="${esc(p.id)}">Reddet</button>`)).join("")}</div>` : ""}
+    <h2>Arkadaşların</h2><div class="sc-list">${d.friends.length ? d.friends.map(p => scRow(p, `${p.unread ? `<i class="sc-badge in">${p.unread}</i>` : ""}<button class="pill" data-sc="chat" data-id="${esc(p.id)}">Mesaj</button>`)).join("") : `<p class="sc-note">Henüz arkadaşın yok. Yukarıdan kullanıcı adıyla ara.</p>`}</div>
+    ${d.outgoing.length ? `<h2>Gönderilen istekler</h2><div class="sc-list">${d.outgoing.map(p => scRow(p, `<button class="pill" data-sc="decline" data-id="${esc(p.id)}">İptal et</button>`)).join("")}</div>` : ""}`;
+  if (focused) { const input = $('[data-f="find"]', root); input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+}
+async function scPerson(id = SC.person?.id) {
+  const p = await api.social("profile", [id]);
+  const root = $("#scRoot");
+  if (!root || S.page.kind !== "person" || S.page.ref !== id) return;
+  if (p.error) return scFail(p.error);
+  SC.person = p;
+  const show = p.showcase || {}, artists = Array.isArray(show.top_artists) ? show.top_artists : [], albums = Array.isArray(show.albums) ? show.albums : [];
+  const actions = { self: `<button class="pill" data-sc="home">Profilim</button>`,
+    friend: `<button class="pill accent" data-sc="chat" data-id="${esc(id)}">Mesaj gönder</button><button class="pill" data-sc="unfriend" data-id="${esc(id)}">Arkadaşlıktan çıkar</button>`,
+    incoming: `<button class="pill accent" data-sc="accept" data-id="${esc(id)}">İsteği kabul et</button><button class="pill" data-sc="decline" data-id="${esc(id)}">Reddet</button>`,
+    outgoing: `<button class="pill" data-sc="decline" data-id="${esc(id)}">İsteği iptal et</button>`,
+    none: `<button class="pill accent" data-sc="add" data-id="${esc(id)}">Arkadaş ekle</button>` }[p.relation];
+  root.innerHTML = `<div class="sc-head">${scAvatar(p, 84)}<div class="li-text"><h1>${esc(scName(p))}</h1><div class="li-s">@${esc(p.username)}${show.favorites ? ` · ${+show.favorites || 0} favori şarkı` : ""}</div>${p.bio ? `<p class="sc-bio">${esc(p.bio)}</p>` : ""}</div></div>
+    <div class="sc-btns">${actions}</div>
+    ${artists.length ? `<h2>En çok dinledikleri</h2><div class="sc-chips">${artists.map(a => `<span>${esc(a)}</span>`).join("")}</div>` : ""}
+    ${albums.length ? `<h2>Albümleri</h2><div class="sc-list">${albums.map(a => `<div class="sc-row plain"><div class="li-text"><div class="li-t">${esc(a?.name)}</div><div class="li-s">${+a?.count || 0} şarkı</div></div></div>`).join("")}</div>` : ""}`;
+}
+const scTime = t => { const d = new Date(t); return isNaN(d) ? "" : d.toLocaleTimeString("tr", { hour: "2-digit", minute: "2-digit" }); };
+const scBubble = m => `<div class="sc-msg${m.sender === SC.data?.me?.id ? " mine" : ""}" data-m="${+m.id}"><span>${esc(m.body)}</span><small>${scTime(m.created_at)}</small></div>`;
+async function scChat(id) {
+  if (!SC.data?.me) await scRefresh();
+  const [p, msgs] = await Promise.all([api.social("profile", [id]), api.social("messages", [id])]);
+  const root = $("#scRoot");
+  if (!root || S.page.kind !== "chat" || S.page.ref !== id) return;
+  if (p.error || msgs.error) return scFail(p.error || msgs.error);
+  SC.peer = id; SC.msgs = msgs; SC.person = p;
+  root.innerHTML = `<div class="sc-row sc-top" data-sc="person" data-id="${esc(id)}">${scAvatar(p, 40)}<div class="li-text"><div class="li-t">${esc(scName(p))}</div><div class="li-s">@${esc(p.username)}</div></div></div>
+    <div id="scMsgs">${msgs.length ? msgs.map(scBubble).join("") : `<p class="sc-note" id="scEmpty">İlk mesajı sen yaz.</p>`}</div>
+    ${p.relation === "friend" ? `<form id="scSend"><input class="sc-input" data-f="body" maxlength="2000" placeholder="Mesaj yaz" autocomplete="off"><button class="pill accent">Gönder</button></form>` : `<p class="sc-note">Yalnızca arkadaşlarına mesaj yazabilirsin.</p>`}`;
+  const box = $("#scMsgs");
+  box.scrollTop = box.scrollHeight;
+  $("#scSend")?.addEventListener("submit", scSubmit);
+  api.social("mark_read", [id]).then(scRefresh);
+}
+function scAppend(m) {
+  const box = $("#scMsgs");
+  if (!box || SC.msgs.some(x => x.id === m.id)) return;
+  SC.msgs.push(m);
+  $("#scEmpty")?.remove();
+  box.insertAdjacentHTML("beforeend", scBubble(m));
+  box.scrollTop = box.scrollHeight;
+}
+async function scSubmit(e) {
+  e.preventDefault();
+  const input = $('[data-f="body"]', e.target), body = input.value.trim(), peer = SC.peer;
+  if (!body) return;
+  input.value = "";
+  const r = await api.social("send", [peer, body]);
+  if (r.error) { input.value = body; return toast(r.error, true); }
+  if (SC.peer === peer) scAppend(r);
+}
+function scEvent(e) {
+  if (e.type === "ready" || e.type === "friends") return scRefresh();
+  if (e.type !== "message" || !e.message.id) return;
+  const m = e.message, me = SC.data?.me?.id, peer = m.sender === me ? m.recipient : m.sender;
+  if (S.page.kind === "chat" && S.page.ref === peer) {
+    scAppend(m);
+    if (m.sender !== me) api.social("mark_read", [peer]).then(scRefresh);
+    return;
+  }
+  if (m.sender === me) return;
+  const who = SC.data?.friends.find(f => f.id === m.sender);
+  toast(`${scName(who)}: ${short(m.body, 60)}`, false, { label: "Aç", run: () => openPage("chat", m.sender) });
+  scRefresh();
+}
+document.addEventListener("input", e => {
+  if (e.target.dataset?.f !== "find") return;
+  SC.query = e.target.value;
+  clearTimeout(SC.searchTimer);
+  SC.searchTimer = setTimeout(async () => {
+    const q = SC.query.trim();
+    SC.results = q.length < 2 ? null : await api.social("search", [q]);
+    if (SC.results?.error) { toast(SC.results.error, true); SC.results = null; }
+    scDraw();
+  }, 300);
+});
+document.addEventListener("click", async e => {
+  const el = e.target.closest("[data-sc]");
+  if (!el) return;
+  e.stopPropagation();
+  const x = el.dataset.sc, id = el.dataset.id, root = $("#scRoot");
+  const run = async (method, done) => { const r = await api.social(method, [id]); if (r.error) return toast(r.error, true); if (done) toast(done); await scRefresh(); if (S.page.kind === "person") scPerson(id); };
+  if (x === "person") openPage("person", id);
+  else if (x === "chat") openPage("chat", id);
+  else if (x === "login") openCloud();
+  else if (x === "home") openPage("social");
+  else if (x === "edit") root.innerHTML = scForm(SC.data.me);
+  else if (x === "cancel") scDraw();
+  else if (x === "save") {
+    const value = f => $(`[data-f="${f}"]`, root).value;
+    const r = await api.social("save_profile", [value("username"), value("display_name"), value("bio")]);
+    if (r.error) { $("#scErr").textContent = r.error; return; }
+    toast("Profil kaydedildi");
+    await scRefresh();
+  }
+  else if (x === "add") run("add_friend", "Arkadaşlık isteği gönderildi");
+  else if (x === "accept") run("accept", "Artık arkadaşsınız");
+  else if (x === "decline") run("remove_friend");
+  else if (x === "unfriend") { if (await confirmBox("Arkadaşlıktan çıkar", `${scName(SC.person)} arkadaşlarından çıkarılsın mı?`, "Çıkar")) run("remove_friend"); }
+}, true);
+
+/* kumandayken çalar düğmeleri bu cihazı değil, çalan cihazı yönetir */
+for (const [name, make] of Object.entries(LISTEN_CMD)) {
+  const real = P[name];
+  P[name] = function (...args) {
+    if (!dvRemote()) return real.apply(this, args);
+    const command = make(...args);
+    if (command) api.devices_send("cmd", command, DV.remote);
+  };
+}
+const dvRealPlaying = P.isPlaying, dvRealPosition = P.position;
+P.isPlaying = function () { return dvRemote() ? !!DV.np?.playing : dvRealPlaying.call(this); };
+P.position = function () {
+  if (!dvRemote() || !DV.np) return dvRealPosition.call(this);
+  const at = DV.np.playing ? DV.np.at + (Date.now() - DV.rx) / 1000 : DV.np.at, end = this.duration();
+  return end ? Math.min(at, end) : at;
+};
+function seekTo(at) {
+  if (!dvRemote()) { A.currentTime = at; return; }
+  api.devices_send("cmd", { cmd: "seek", at }, DV.remote);
+  if (DV.np) { DV.np.at = at; DV.rx = Date.now(); }
+}
+setInterval(() => { if (LT.room && DV.remote) dvDetach(); if (P.isPlaying()) dvPublish(false); }, 4000);
+onAudio("seeked", () => dvChanged(false, true));
+
 onAudio("playing", () => {
   P.loading = false;
   if (P.current && P.countedPlay !== P.token) {
@@ -1588,16 +2145,47 @@ onAudio("ended", () => { listenEnd(); P.next(true); });
 onAudio("waiting", () => { if (!A.paused) { $("#ppBtn").innerHTML = I.spinner; } });
 onAudio("error", () => {
   if (!P.current || !A.getAttribute("src")) return;
-  if (!P.local && !P.retried) {  // akış adresi geçersizleşmiş olabilir: yenisini al, kaldığı yerden devam
-    P.retried = true;
+  const damaged = A.getAttribute("src").startsWith("/cache/");  // önbellek dosyası bozuk: silinir, şarkı internetten gelir
+  if ((!P.local || damaged) && (P.retried || 0) < STREAM_RETRIES) {  // akış adresi geçersizleşmiş olabilir: yenisini al, kaldığı yerden devam
+    P.retried = (P.retried || 0) + 1;
     P.resumeAt = [P.current.id, A.currentTime];
-    P.refreshStream();
+    if (damaged) { P.local = false; api.drop_cache(P.current.id).then(() => P.refreshStream()); }
+    else P.refreshStream();
     return;
   }
   P.loading = false;
   playFailed("Şarkı çalınamadı");
   playerChanged();
 });
+
+/* bekçi: oynatıcı "çalıyor" görünüp ilerlemiyorsa (bağlantı koptu, ses bağlamı askıda kaldı) kaldığı yerden yeniden başlatır */
+const WATCH = { at: -1, tick: 0, stuck: 0, good: 0, tries: 0 };
+setInterval(() => {
+  const now = Date.now(), gap = now - WATCH.tick;
+  WATCH.tick = now;
+  if (!P.current || !A.getAttribute("src") || A.paused || A.ended || A.seeking || P.loading || fade || gap > 6000) {  // uzun boşluk: telefon uyumuş
+    WATCH.at = A.currentTime; WATCH.stuck = 0;
+    return;
+  }
+  if (actx && (actx.state === "suspended" || actx.state === "interrupted")) actx.resume().catch(() => {});
+  if (A.currentTime !== WATCH.at) {
+    WATCH.at = A.currentTime; WATCH.stuck = 0;
+    if (++WATCH.good >= 5) { WATCH.tries = 0; P.retried = 0; }  // 10 sn sorunsuz çaldı
+    return;
+  }
+  WATCH.good = 0;
+  WATCH.stuck += gap;
+  if (WATCH.stuck < STALL_MS) return;
+  WATCH.stuck = 0;
+  if (++WATCH.tries > STREAM_RETRIES) {
+    WATCH.tries = 0;
+    if (P.nextTrack() && !listenGuest()) { toast(`Atlandı: ${short(P.current.title, 40)}`, true); P.next(); }
+    else { A.pause(); playFailed("Şarkı çalınamadı"); playerChanged(); }
+    return;
+  }
+  if (P.local) P.load(A.getAttribute("src"), A.currentTime);
+  else { P.resumeAt = [P.current.id, A.currentTime]; P.refreshStream(); }
+}, 2000);
 
 /* crossfade: şarkı bitmeden sıradaki yavaşça açılır, çalan yavaşça kısılır */
 let fade = null;
@@ -1645,7 +2233,7 @@ setInterval(() => {
   if (!P.current || !A.getAttribute("src") || A.paused || P.loading || fade) return;
   const st = S.settings, dur = isFinite(A.duration) ? A.duration : P.duration(), left = dur - A.currentTime;
   if (!dur || !(st.gapless || st.crossfade)) return;
-  const cf = st.crossfade ? Math.max(1, +st.crossfade_seconds || 6) : 0;
+  const cf = st.crossfade && !LT.room ? Math.max(1, +st.crossfade_seconds || 6) : 0;  // ortak dinlemede herkes aynı anda geçsin
   if (left < Math.max(cf + 10, 15)) P.prepareNext();
   if (cf && left <= cf && P.prepared && P.prepared.el.readyState >= 3 && P.nextTrack() && P.nextTrack().id === P.prepared.id) startCrossfade(Math.min(cf, left));
 }, 250);
@@ -1683,12 +2271,14 @@ function playerChanged(trackChanged = false) {
   const state = { track: t && plain(t), playing: !A.paused && !!A.src, loading: P.loading, shuffle: P.shuffle, repeat: P.repeat };
   const sig = JSON.stringify(state);
   if (sig !== lastPlayerState) { lastPlayerState = sig; api.player_state(state); }
+  listenChanged();
+  dvChanged();
 }
-function queueChanged() { renderQueue(); autoContinue(); }
+function queueChanged() { renderQueue(); autoContinue(); listenChanged(true); dvChanged(true); }
 /* kuyrukta son şarkıya gelinince benzer şarkılar (YouTube Music radyosu + YouTube Mix) sona eklenir */
 function autoContinue() {
   const t = P.current;
-  if (!t || S.settings.autoplay === false || P.repeat !== "off" || P.pos < P.order.length - 1 || P.autoFor === t.id) return;
+  if (!t || listenGuest() || dvRemote() || S.settings.autoplay === false || P.repeat !== "off" || P.pos < P.order.length - 1 || P.autoFor === t.id) return;
   P.autoFor = t.id;
   api.radio(plain(t)).then(tracks => {
     if (!tracks || !tracks.length || !P.current || P.current.id !== t.id || P.pos < P.order.length - 1) return;
@@ -1698,6 +2288,8 @@ function autoContinue() {
     const ended = A.ended;
     add.forEach(x => { P.queue.push(plain(x)); P.order.push(P.queue.length - 1); });
     renderQueue();
+    listenChanged(true);
+    dvChanged(true);
     if (ended) P.next(true);  // şarkı biz beklerken bittiyse hemen devam et
   });
 }
@@ -2005,7 +2597,7 @@ flame.addEventListener("pointerdown", e => {
 flame.addEventListener("pointermove", e => { if (seeking != null) seeking = Math.min(1, Math.max(0, e.offsetX / flame.clientWidth)); });
 flame.addEventListener("pointerup", () => {
   if (seeking == null) return;
-  A.currentTime = seeking * P.duration();
+  seekTo(seeking * P.duration());
   seeking = null;
 });
 let lastFrame = 0;
@@ -2479,9 +3071,18 @@ function trackMenu(track, ctx, x, y) {
   items.push("-", { label: "YouTube'da aç", act: () => api.open_url(track.url) });
   menu(items, x, y);
 }
+/* telefonda sürükleme kaydırmayla çakışır: kitaplık sırası menüden değişir */
+function sideMoves(id, level) {
+  if (!document.documentElement.classList.contains("mobile")) return [];
+  const ids = level.map(([i]) => i), n = ids.indexOf(id), moves = [];
+  if (n > 0) moves.push({ label: "Yukarı taşı", act: () => api.reorder_side(id, ids[n - 1], false) });
+  if (n >= 0 && n < ids.length - 1) moves.push({ label: "Aşağı taşı", act: () => api.reorder_side(id, ids[n + 1], true) });
+  return moves;
+}
 function albumMenu(id, x, y) {
   const album = L.album(id), tracks = L.albumTracks(id), folders = L.folders();
-  const items = [];
+  const items = [...sideMoves(id, L.albums(album.folder || null))];
+  if (items.length) items.push("-");
   if (tracks.length) items.push({ label: "Çal", act: () => P.playList(tracks, 0, `album:${id}`) }, { label: "Tümünü indir", act: async () => { const m = await api.download_all(tracks.map(plain)); if (m) toast(m); } }, "-");
   items.push({ label: "Yeniden adlandır…", act: async () => { const n = await ask("Yeniden adlandır", "Albüm adı", album.name); if (n) api.rename_album(id, n); } });
   items.push({ label: "Klasöre taşı", sub: [
@@ -2495,8 +3096,9 @@ function albumMenu(id, x, y) {
   menu(items, x, y);
 }
 function folderMenu(id, x, y) {
-  const folder = S.lib.folders[id];
+  const folder = S.lib.folders[id], moves = sideMoves(id, L.folders());
   menu([
+    ...moves, ...(moves.length ? ["-"] : []),
     { label: "Bu klasörde yeni albüm…", act: () => createAlbum({ folder: id }) },
     { label: "Yeniden adlandır…", act: async () => { const n = await ask("Yeniden adlandır", "Klasör adı", folder.name); if (n) api.rename_folder(id, n); } },
     "-",
@@ -2506,6 +3108,8 @@ function folderMenu(id, x, y) {
 
 /* tıklamalar: data-act ile */
 const ACT = {
+  openDevices: () => openDevices(),
+  openSocial: () => openPage("social"),
   statsPeriod: el => { S.statsPeriod = el.dataset.k; renderPage(true); },
   play(el) {
     const holder = el.closest("[data-list]"), list = S.lists[holder.dataset.list], i = +holder.dataset.i, t = list.tracks[i];
@@ -2641,7 +3245,7 @@ const D = {
 
   down(e) {
     if (e.button !== 0 || e.target.closest("button, input, .menu, #modal")) return;
-    const el = e.target.closest(".row, .card[data-tid], .card[data-pl], .qrow");
+    const el = e.target.closest(".row, .card[data-tid], .card[data-pl], .qrow, #libList .li");
     if (!el) return;
     this.src = el;
     this.start = [e.clientX, e.clientY];
@@ -2668,6 +3272,8 @@ const D = {
     if (target) this.drop(src, target, after);
   },
   item(el) {
+    if (el.dataset.album) return { side: "album", id: el.dataset.album, name: L.album(el.dataset.album)?.name || "" };
+    if (el.dataset.folder) return { side: "folder", id: el.dataset.folder, name: S.lib.folders[el.dataset.folder]?.name || "" };
     if (el.dataset.pl) return { playlist: S.plShown[el.dataset.pl] };
     const list = S.lists[el.dataset.list];
     return { track: itemTrack(el), ctx: list.ctx, list: el.dataset.list, qi: el.dataset.qi != null ? +el.dataset.qi : null };
@@ -2676,7 +3282,8 @@ const D = {
     const it = this.item(this.src), obj = it.playlist || it.track;
     this.ghost = document.createElement("div");
     this.ghost.id = "ghost";
-    this.ghost.innerHTML = `<img src="${thumb(obj)}"><div><b>${esc(obj.title)}</b><span></span></div>`;
+    this.ghost.innerHTML = it.side ? `<div><b>${esc(it.name)}</b><span></span></div>`
+      : `<img src="${thumb(obj)}"><div><b>${esc(obj.title)}</b><span></span></div>`;
     document.body.appendChild(this.ghost);
     document.body.classList.add("dragging");
     $("#toast").className = "";
@@ -2701,6 +3308,13 @@ const D = {
     const el = document.elementFromPoint(x, y);
     if (!el) return null;
     const it = this.item(this.src);
+    if (it.side) {
+      const li = el.closest("#libList .li");
+      if (li === this.src) return null;
+      if (!li) return it.side === "album" && L.album(it.id)?.folder && el.closest("#libList") ? { kind: "root", el: $("#libList") } : null;
+      if (li.dataset.folder) return it.side === "album" ? { kind: "into", value: li.dataset.folder, el: li } : { kind: "side", el: li };
+      return it.side === "album" ? { kind: "side", el: li } : null;
+    }
     const row = el.closest(".row, .qrow");
     if (row && row !== this.src && this.reorderable(it, row)) return { kind: "row", el: row };
     const drop = el.closest("[data-drop]");
@@ -2713,10 +3327,11 @@ const D = {
     const old = this.target;
     if (old && (!target || target.el !== old.el)) old.el.classList.remove("drop-on");
     this.target = target;
-    if (this.line && (!target || target.kind !== "row")) { this.line.remove(); this.line = null; }
+    const lined = target && (target.kind === "row" || target.kind === "side");
+    if (this.line && !lined) { this.line.remove(); this.line = null; }
     if (!target) { this.hint(null); return; }
     const it = this.item(this.src);
-    if (target.kind === "row") {
+    if (lined) {
       const r = target.el.getBoundingClientRect();
       this.after = y > r.top + r.height / 2;
       if (!this.line) { this.line = document.createElement("div"); this.line.className = "drop-line"; document.body.appendChild(this.line); }
@@ -2725,7 +3340,9 @@ const D = {
       return;
     }
     target.el.classList.add("drop-on");
-    if (target.kind === "album") {
+    if (target.kind === "into") this.hint(`“${short(S.lib.folders[target.value].name, 24)}” klasörüne taşı`);
+    else if (target.kind === "root") this.hint("Klasörden çıkar");
+    else if (target.kind === "album") {
       const name = short(L.album(target.value).name, 24);
       this.hint(it.playlist ? `＋ Tüm şarkıları “${name}” albümüne ekle` : `＋ “${name}” albümüne ekle`);
     } else if (target.kind === "library") this.hint(it.playlist ? "＋ Kitaplığına kaydet" : "＋ Bu şarkıyla yeni albüm oluştur");
@@ -2734,12 +3351,18 @@ const D = {
   hint(text) {
     if (!this.ghost) return;
     const it = this.item(this.src);
-    $("span", this.ghost).textContent = text || (it.playlist ? "Kitaplığına ya da bir albüme bırak"
+    $("span", this.ghost).textContent = text || (it.side ? "Sırasını değiştirmek için bırak" : it.playlist ? "Kitaplığına ya da bir albüme bırak"
       : it.ctx.kind === "queue" || (["album", "favorites"].includes(it.ctx.kind) && it.ctx.reorder !== false) ? "Sırayı değiştir ya da bir albüme bırak"
       : "Kenar çubuğundaki bir albüme ya da Favoriler'e bırak");
   },
   drop(src, target, after) {
     const it = this.item(src);
+    if (it.side) {
+      if (target.kind === "side") api.reorder_side(it.id, target.el.dataset.album || target.el.dataset.folder, after);
+      else if (target.kind === "into") { S.expanded.add(target.value); saveExpanded(); api.move_album(it.id, target.value); }
+      else if (target.kind === "root") api.move_album(it.id, null);
+      return;
+    }
     if (it.playlist) {
       if (target.kind === "library") savePlaylist(it.playlist);
       else if (target.kind === "album") api.add_playlist_to_album(it.playlist, target.value).then(r => toast(r.error || r.message, !!r.error));
@@ -2825,6 +3448,9 @@ window.SOUND = {
       case "home": S.home = d; if (S.page.kind === "home") homeArrived(); break;
       case "account": { const next = accountDone; accountDone = null; next?.(); break; }
       case "cloud": cloudChanged(d); break;
+      case "listen": listenEvent(d); break;
+      case "devices": dvEvent(d); break;
+      case "social": scEvent(d); break;
       case "cloud_login":
         if (d.error) toast("Google girişi: " + d.error, true);
         else { toast("SOUND hesabına giriş yapıldı"); api.cloud_status().then(cloudChanged); }
@@ -2885,7 +3511,10 @@ const SHORTCUTS = [
   ["back", "Önceki sayfa", "Alt+ArrowLeft"],
   ["forward", "Sonraki sayfa", "Alt+ArrowRight"],
 ];
-const seekBy = s => { if (A.src && isFinite(A.duration)) A.currentTime = Math.max(0, Math.min(A.duration - 0.5, A.currentTime + s)); };
+const seekBy = s => {
+  if (dvRemote()) return seekTo(Math.max(0, Math.min(P.duration() - 0.5, P.position() + s)));
+  if (A.src && isFinite(A.duration)) A.currentTime = Math.max(0, Math.min(A.duration - 0.5, A.currentTime + s));
+};
 const nudgeVolume = d => { muted = null; setVolume(Math.round(Math.max(0, Math.min(1, volPos + d)) * 100) / 100); };
 const SHORTCUT_RUN = {
   playPause: () => P.toggle(), next: () => P.next(), previous: () => P.previous(),
@@ -3012,6 +3641,13 @@ $("#nextBtn").innerHTML = I.next; $("#nextBtn").onclick = () => P.next();
 $("#ppBtn").onclick = () => P.toggle();
 $("#repeatBtn").onclick = () => P.cycleRepeat();
 $("#panelBtn").innerHTML = I.queue; $("#panelBtn").onclick = () => togglePanel();
+$("#listenBtn").innerHTML = I.listen; $("#listenBtn").onclick = () => openListen();
+$("#deviceBtn").innerHTML = I.devices; $("#deviceBtn").onclick = () => openDevices();
+$("#profileBtn").innerHTML = I.person; $("#profileBtn").onclick = e => { e.stopPropagation(); openPage("social"); };
+{
+  const chip = Object.assign(document.createElement("button"), { id: "dvChip", onclick: e => { e.stopPropagation(); openDevices(); } });
+  $("#bar").appendChild(chip);
+}
 function onScroll() { $("#topbar").classList.toggle("solid", $("#scroll").scrollTop > 40); }
 $("#scroll").addEventListener("scroll", onScroll, { passive: true });
 
@@ -3030,6 +3666,9 @@ async function start() {
   openPage("home", null, { push: false });
   playerChanged(true);
   if (P.current) api.prefetch([P.current, ...P.upcoming(1).map(([, t]) => t)].filter(t => !L.dl(t.id)), S.panelOpen && S.panelMode === "video");
+  api.listen_status().then(st => { if (st.active) listenStatus(st); });  // telefonda arayüz yeniden açıldıysa oda sürer
+  api.devices_status().then(dvStatus);
+  scRefresh();
   requestAnimationFrame(frame);
 }
 try { applyUI(JSON.parse(localStorage.getItem("sound.ui") || "null")); } catch { }  // kayıtlı görünüm: ilk karede

@@ -32,7 +32,7 @@ Kaldırmak için: `bash ~/.local/share/sound/linux/uninstall.sh`
 
 ## Mobil sürüm (Android)
 
-### [⬇ SOUND-android-0.1.9.apk'yı indir](https://github.com/Sefikak/SOUND/raw/android-0.1.10/SOUND-android-0.1.10.apk)
+### [⬇ SOUND-android-0.1.11.apk'yı indir](https://github.com/Sefikak/SOUND/raw/android-0.1.11/SOUND-android-0.1.11.apk)
 
 **Erken deneme sürümü:** Sorun çıkabilir. 32 ve 64 bit telefonlarda kurulabilir.
 

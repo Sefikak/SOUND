@@ -466,7 +466,7 @@ async function openSettings() {
    Ayarlar settings.ui içinde saklanır; açılışta beklemeden uygulanabilsin diye bir kopyası localStorage'da da durur. */
 const UI_DEFAULTS = {
   accent: "#8b5cf6", bg: "dark", flame: "fire", glow: true,
-  zoom: 100, radius: 10, side_w: 290, calm: false,
+  zoom: 100, radius: 10, side_w: 290, panel_w: 350, calm: false,
   side: "left", bar: "bottom", np: "left", ctrl: "center",
   shuffle_btn: true, repeat_btn: true, hist_btns: true, undo_btn: true,
 };
@@ -539,6 +539,7 @@ function applyUI(ui) {
   for (const [k, v] of Object.entries(bg)) root.setProperty(k === "hover" ? "--card-hover" : "--" + k, v);
   root.setProperty("--radius", u.radius + "px");
   root.setProperty("--side-w", u.side_w + "px");
+  root.setProperty("--panel-w", u.panel_w + "px");
   app.classList.toggle("side-right", u.side === "right");
   app.classList.toggle("bar-top", u.bar === "top");
   app.classList.toggle("np-right", u.np === "right");
@@ -591,7 +592,7 @@ async function openCustomize() {
           <div class="set-sec">Görünüm</div>
           ${row("Arayüz boyutu", "Her şeyi büyütür ya da küçültür.", range("zoom", 80, 130, 5))}
           ${row("Köşe yuvarlaklığı", "", range("radius", 0, 20, 1))}
-          ${row("Kenar çubuğu genişliği", "", range("side_w", 220, 400, 10))}
+          ${row("Kenar çubuğu genişliği", "", range("side_w", 200, 560, 10))}
           ${row("Animasyonları azalt", "Geçiş ve açılma efektleri kapanır (alev çalışmaya devam eder).", tog("calm"))}
           <div class="set-sec">Yerleşim</div>
           ${row("Kenar çubuğu", "Menü ve kitaplık hangi tarafta dursun.", seg("side", [["left", "Solda"], ["right", "Sağda"]]))}
@@ -952,7 +953,8 @@ function renderPage(keep = false) {
   page.innerHTML = { home: pageHome, search: pageSearch, favorites: pageFavorites, downloads: pageDownloads, album: pageAlbum, playlist: pagePlaylist, artist: pageArtist, stats: pageStats,
                      social: pageSocial, person: pagePerson, chat: pageChat }[kind](ref);
   S.signature = pageSignature();
-  $$("#nav a").forEach(a => a.classList.toggle("on", a.dataset.page === kind));
+  const navKind = kind === "person" || kind === "chat" ? "social" : kind;
+  $$("#nav a").forEach(a => a.classList.toggle("on", a.dataset.page === navKind));
   $("#backBtn").disabled = !S.back.length;
   $("#fwdBtn").disabled = !S.fwd.length;
   if (keep) scroll.scrollTop = top;
@@ -1963,8 +1965,9 @@ const scAvatar = (p, size) => tile(p?.id || "x", size, `<b style="font-size:${Ma
 const scRow = (p, side = "") => `<div class="sc-row" data-sc="person" data-id="${esc(p.id)}">${scAvatar(p, 44)}
   <div class="li-text"><div class="li-t">${esc(scName(p))}</div><div class="li-s">@${esc(p.username)}</div></div>${side}</div>`;
 function scBadge() {
-  const d = SC.data, count = d?.me ? d.incoming.length + d.friends.reduce((n, f) => n + f.unread, 0) : 0, b = $("#profileBtn");
-  b.innerHTML = I.person + (count ? `<i class="sc-badge">${count > 99 ? "99+" : count}</i>` : "");
+  const d = SC.data, count = d?.me ? d.incoming.length + d.friends.reduce((n, f) => n + f.unread, 0) : 0, nav = $("#navProfile");
+  $(".sc-badge", nav)?.remove();
+  if (count) nav.insertAdjacentHTML("beforeend", `<i class="sc-badge in">${count > 99 ? "99+" : count}</i>`);
   document.dispatchEvent(new CustomEvent("socialbadge", { detail: count }));
 }
 async function scRefresh() {
@@ -3109,7 +3112,6 @@ function folderMenu(id, x, y) {
 /* tıklamalar: data-act ile */
 const ACT = {
   openDevices: () => openDevices(),
-  openSocial: () => openPage("social"),
   statsPeriod: el => { S.statsPeriod = el.dataset.k; renderPage(true); },
   play(el) {
     const holder = el.closest("[data-list]"), list = S.lists[holder.dataset.list], i = +holder.dataset.i, t = list.tracks[i];
@@ -3632,7 +3634,7 @@ document.addEventListener("pointermove", e => {
   statTip.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + "px";
   statTip.style.top = Math.max(8, e.clientY - 40) + "px";
 });
-$$("#nav a").forEach(a => a.onclick = () => a.dataset.page === "search" ? ACT.focusSearch() : openPage(a.dataset.page));
+$$("#nav a[data-page]").forEach(a => a.onclick = () => openPage(a.dataset.page));
 $("#newBtn").onclick = e => { e.stopPropagation(); menuAt([{ label: "Yeni albüm", act: () => createAlbum() }, { label: "Sanatçı Mix", act: () => openArtistMix() }, { label: "Yeni klasör", act: () => createFolder() }], $("#newBtn")); };
 $("#accountBtn").onclick = () => openSettings();
 $("#shuffleBtn").innerHTML = I.shuffle; $("#shuffleBtn").onclick = () => P.toggleShuffle();
@@ -3643,10 +3645,66 @@ $("#repeatBtn").onclick = () => P.cycleRepeat();
 $("#panelBtn").innerHTML = I.queue; $("#panelBtn").onclick = () => togglePanel();
 $("#listenBtn").innerHTML = I.listen; $("#listenBtn").onclick = () => openListen();
 $("#deviceBtn").innerHTML = I.devices; $("#deviceBtn").onclick = () => openDevices();
-$("#profileBtn").innerHTML = I.person; $("#profileBtn").onclick = e => { e.stopPropagation(); openPage("social"); };
 {
   const chip = Object.assign(document.createElement("button"), { id: "dvChip", onclick: e => { e.stopPropagation(); openDevices(); } });
   $("#bar").appendChild(chip);
+}
+/* kenar çubuğu ve sağ panel: aradaki boşluktan sürükleyerek genişletilir, çift tıklayınca varsayılana döner */
+{
+  const LIMITS = { side_w: [200, 560], panel_w: [280, 640] }, MAIN_MIN = 380, main = $("#main");
+  const neighbour = left => {
+    const swapped = $("#app").classList.contains("side-right");
+    return left === swapped ? (S.panelOpen ? "panel_w" : null) : "side_w";
+  };
+  const store = async (key, width) => {
+    const ui = { ...uiOpts(S.settings.ui), [key]: width };
+    applyUI(ui);
+    S.settings = (await api.update_settings({ ui })).settings;
+  };
+  const grips = [true, false].map(left => {
+    const el = Object.assign(document.createElement("div"), { className: "grip", title: "Genişletmek için sürükle" });
+    $("#app").appendChild(el);
+    let drag = null;
+    el.addEventListener("pointerdown", e => {
+      const key = neighbour(left);
+      if (e.button !== 0 || !key) return;
+      e.preventDefault();
+      el.setPointerCapture(e.pointerId);
+      const width = uiOpts(S.settings.ui)[key];
+      drag = { key, x: e.clientX, start: width, width, room: main.clientWidth - MAIN_MIN };
+      el.classList.add("on");
+      document.body.classList.add("resizing");
+    });
+    el.addEventListener("pointermove", e => {
+      if (!drag) return;
+      const [min, max] = LIMITS[drag.key], moved = (e.clientX - drag.x) * (left ? 1 : -1);
+      drag.width = Math.round(Math.max(min, Math.min(max, drag.start + Math.min(moved, drag.room))));
+      document.documentElement.style.setProperty(drag.key === "side_w" ? "--side-w" : "--panel-w", drag.width + "px");
+    });
+    const finish = () => {
+      if (!drag) return;
+      const { key, width, start } = drag;
+      drag = null;
+      el.classList.remove("on");
+      document.body.classList.remove("resizing");
+      if (width !== start) store(key, width);
+    };
+    el.addEventListener("pointerup", finish);
+    el.addEventListener("pointercancel", finish);
+    el.addEventListener("dblclick", () => { const key = neighbour(left); if (key) store(key, UI_DEFAULTS[key]); });
+    return { el, left };
+  });
+  const place = () => {
+    const r = main.getBoundingClientRect();
+    for (const { el, left } of grips) {
+      el.style.display = neighbour(left) ? "" : "none";
+      Object.assign(el.style, { top: r.top + "px", height: r.height + "px", left: (left ? r.left - 9 : r.right - 1) + "px" });
+    }
+  };
+  new ResizeObserver(place).observe(main);
+  addEventListener("resize", place);
+  document.addEventListener("transitionend", place);
+  setInterval(place, 1000);  // panel açılıp kapanınca ya da yerleşim değişince
 }
 function onScroll() { $("#topbar").classList.toggle("solid", $("#scroll").scrollTop > 40); }
 $("#scroll").addEventListener("scroll", onScroll, { passive: true });

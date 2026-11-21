@@ -4,6 +4,11 @@ Her güncellemede yenilikler en üste eklenir; eskiler aşağıda durur. Bilgisa
 
 ---
 
+## 22 Kasım 2026 · masaüstü (Linux)
+
+### Düzeltmeler
+- **Linux:** ortak dinlemede oda kodunu kopyalayınca uygulamanın kapanması düzeldi.
+
 ## 22 Kasım 2026 · Android 0.1.12
 
 ### Yeni

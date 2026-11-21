@@ -2119,6 +2119,29 @@ def _launched_at_startup():
         return False
 
 
+def _patch_qt_permissions():
+    """Linux (Qt): pywebview'in izin işleyicisi PyQt6'da setFeaturePermission'a düz sayı veriyor → TypeError;
+    PyQt6 yuvadaki yakalanmamış hatada süreci abort ediyor. Pano yazma (oda kodunu kopyala) bu izni
+    istediği için uygulama çöküyordu. İşleyici doğru enum'larla ve hata yutarak değiştirilir."""
+    try:
+        from webview.platforms import qt as wq
+        from qtpy.QtWebEngineCore import QWebEnginePage
+    except Exception:
+        return
+    F, P = QWebEnginePage.Feature, QWebEnginePage.PermissionPolicy
+    allowed = {getattr(F, n) for n in ("MediaAudioCapture", "MediaVideoCapture", "MediaAudioVideoCapture",
+                                       "ClipboardReadWrite", "ClipboardSanitizedWrite") if hasattr(F, n)}
+
+    def on_permission(self, url, feature):
+        try:
+            policy = P.PermissionGrantedByUser if feature in allowed else P.PermissionDeniedByUser
+            self.setFeaturePermission(url, feature, policy)
+        except Exception as e:  # buradan hata çıkarsa PyQt6 tüm uygulamayı kapatır
+            print("izin isteği yanıtlanamadı:", feature, e, file=sys.stderr)
+
+    wq.BrowserView.WebPage.onFeaturePermissionRequested = on_permission
+
+
 def run():
     if not _acquire_single_instance():
         return
@@ -2167,6 +2190,7 @@ def run():
             QGuiApplication.setApplicationName("SOUND")
         except Exception:
             pass
+        _patch_qt_permissions()
         options = {"gui": "qt", "icon": ICON_PNG}
     webview.start(private_mode=False, storage_path=os.path.join(DATA_DIR, "webview"), **options)
     backend.save_session()

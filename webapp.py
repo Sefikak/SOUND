@@ -17,7 +17,7 @@ import sys
 import threading
 import time
 import webbrowser
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 
 # Sonraki şarkıya kendiliğinden geçerken tarayıcının "önce kullanıcı tıklasın" kuralı engel olmasın
 # Tarayıcı motorunun kendi medya oturumunu kapat: yoksa Windows iki oturum görür, kulaklık / klavye medya
@@ -61,6 +61,7 @@ DEFAULT_ACCENT = "#8b5cf6"
 SESSION_FILE = os.path.join(DATA_DIR, "session.json")
 HOME_REFRESH_AFTER = 3 * 3600
 STREAM_MARGIN = 120  # akış adresinin bitmesine bu kadar saniye kala yenisini al
+STREAM_WAIT = 30     # internet kesilince adres araması asılı kalabilir: en fazla bu kadar saniye beklenir
 THUMBBAR_ICONS = ("tb_prev", "tb_play", "tb_pause", "tb_next", "tb_shuffle", "tb_shuffle_on",
                   "tb_repeat", "tb_repeat_on", "tb_repeat_one")
 
@@ -276,6 +277,7 @@ def plain_track(track):
 class Backend:
     def __init__(self):
         self.lib = Library()
+        threading.Thread(target=self.lib.tidy_covers, daemon=True).start()  # kullanılmayan kapak resimleri
         downloader.set_auth(self.lib.data.get("youtube_auth"))
         self.window = None
         self.app_return_url = None  # telefonda android_main "soundapp://back" koyar (giriş sayfasındaki düğme)
@@ -283,6 +285,8 @@ class Backend:
         self.closing = False
         self.quitting = False  # tepsiden Çıkış / yeniden başlatma: kapatma tepsiye indirmesin
         self.tray = None       # tray.Tray; kurulamadıysa None (pencereyi kapatmak uygulamayı kapatır)
+        self.tray_menu = None  # TrayMenu (Windows): tepsideki temalı sağ tık menüsü
+        self.tray_now = {}     # menü için çalan şarkı
         self.started = False
         self.events = queue.Queue()
         self.win = ThreadPoolExecutor(1)        # Windows görev çubuğu / medya kartı işleri tek iş parçacığında
@@ -320,6 +324,13 @@ class Backend:
         self.listen = listen.Listen(lambda event: self.push("listen", event))
         self.devices = devices.Devices(self.cloud, lambda event: self.push("devices", event))
         self.social = social.Social(self.cloud, self.lib, lambda event: self.push("social", event))
+        self.presence = None
+        if IS_WINDOWS or sys.platform.startswith("linux"):  # telefonda Discord IPC yok
+            try:
+                import discordrpc
+                self.presence = discordrpc.Presence(self.lib.settings.get("discord_presence", True) is not False)
+            except Exception:
+                self.presence = None
         threading.Thread(target=self._event_loop, daemon=True).start()
 
     # ---------- arayüze bildirim ----------
@@ -347,6 +358,7 @@ class Backend:
             "favorites": data["favorites"],
             "albums": data["albums"],
             "folders": data["folders"],
+            "album_covers": data["album_covers"],
             "added": data["added"],  # listeye eklenme zamanları ("Son eklenen" sıralaması)
             "recent": [t["id"] for t in self.lib.recent_tracks(30)],
             "history": [e["id"] for e in data["history"]],
@@ -487,6 +499,9 @@ class Backend:
                     pass
         self.win.submit(apply)
         self.media_thread.submit(apply_media)
+        if self.presence:
+            self.presence.update(track, playing and not loading, state.get("position") or 0)
+        self.tray_now = {"track": track, "playing": playing or loading}
         if self.tray:
             artist = f" — {track['artist']}" if track and track.get("artist") else ""
             self.tray.set_state(f"{track['title']}{artist}" if track else "SOUND", playing or loading)
@@ -579,11 +594,25 @@ class Backend:
         threading.Thread(target=show, daemon=True).start()
         return True
 
+    def notify(self, title, body, target=""):
+        """Sistem bildirimi (yeni mesaj, arkadaşlık isteği, ortak dinleme daveti). Tıklanınca pencere öne gelir ve
+        arayüz hedefi açar (target: "chat:<id>", "group:<id>", "social", "jam:<kod>"). Telefonda android_main değiştirir."""
+        if not self.tray:
+            return False
+
+        def clicked():
+            self.show_window()
+            self.push("open_target", target)
+        self.tray.notify(str(body)[:250], str(title)[:60] or "SOUND", clicked)
+        return True
+
     def quit_app(self):
         self.quitting = True
         self.save_session()
         if self.tray:
             self.tray.stop()
+        if self.tray_menu:
+            self.tray_menu.destroy()
         try:
             self.window.destroy()
         finally:
@@ -712,10 +741,15 @@ class Backend:
                 return cached
         future = self._stream_job(track, force)
         try:
-            return future.result()
+            return future.result(timeout=STREAM_WAIT)
+        except FutureTimeout:
+            with self.stream_lock:  # asılı kalan iş sonraki denemeyi de bekletmesin
+                if self.stream_jobs.get(track_id) is future:
+                    self.stream_jobs.pop(track_id, None)
+            return {"error": "İnternet bağlantısı yok", "offline": True}
         except Exception as error:
             return {"error": friendly_error(error), "age": downloader.is_age_error(error),
-                    "unavailable": downloader.is_unavailable_error(error)}
+                    "unavailable": downloader.is_unavailable_error(error), "offline": downloader.is_network_error(error)}
 
     def _stream_job(self, track, force=False, prefetch=False):
         track_id = track["id"]
@@ -871,9 +905,10 @@ class Backend:
         except Exception as error:
             return {"error": friendly_error(error)}
 
-    def artist_mix(self, refs, count=30):
+    def artist_mix(self, refs, count=30, popular=False):
         """Sanatçı Mix: seçilen sanatçıların popüler şarkılarından ve son albümlerinden rastgele şarkılarla
-        yeni bir albüm. Şarkılar sanatçılar arasında eşit bölünür, sonra karıştırılır. refs: [{"id"|"name"}]"""
+        yeni bir albüm. Şarkılar sanatçılar arasında eşit bölünür, sonra karıştırılır. refs: [{"id"|"name"}]
+        popular=True: yalnızca popüler şarkılar (sanatçı başına en çok 25), albüm/single şarkıları katılmaz."""
         import math
         import random
         refs = [r for r in refs or [] if isinstance(r, dict) and (r.get("id") or r.get("name"))][:12]
@@ -886,7 +921,7 @@ class Backend:
             if page.get("error"):
                 return ref.get("name") or "?", None, []
             songs = list(page["songs"])
-            for release in (page.get("albums") or [])[:3] + (page.get("singles") or [])[:2]:
+            for release in [] if popular else (page.get("albums") or [])[:3] + (page.get("singles") or [])[:2]:
                 try:
                     songs += release_songs(release["id"], 40)
                 except Exception:
@@ -1062,7 +1097,7 @@ class Backend:
     # ---------- ayarlar ----------
 
     def settings_state(self):
-        return {"settings": self.lib.settings, "cache_bytes": downloader.cache_size()}
+        return {"settings": self.lib.settings, "cache_bytes": downloader.cache_size(), "autostart": _autostart_state()}
 
     def clear_cache(self):
         downloader.trim_cache(0)
@@ -1466,6 +1501,172 @@ class Backend:
         return {"ok": ok, "message": message}
 
 
+class TrayMenu:
+    """Tepsi simgesine sağ tıklayınca açılan temalı menü (Windows; web/traymenu.html). Pencere açılışta gizli kurulur,
+    her açılışta çalan şarkı ve kullanıcının renkleriyle (settings.ui) yeniden çizilir; dışarı tıklanınca gizlenir.
+    Linux'ta ve kurulamazsa pystray'in sistem menüsü kullanılır."""
+    TITLE = "SOUND menü"
+    WIDTH, HEIGHT = 280, 246  # mantıksal piksel (traymenu.html içeriğine göre)
+
+    def __init__(self, backend, base):
+        self.backend = backend
+        self.base = base
+        self.hwnd = None
+        self.visible = False
+        self.window = webview.create_window(self.TITLE, url=base + "/traymenu.html", js_api=TrayMenuApi(self),
+                                            width=self.WIDTH, height=self.HEIGHT, x=0, y=0,  # x/y: WinForms ilk gösterişte
+                                            hidden=True, frameless=True,                      # pencereyi kendi yerine koymasın
+                                            easy_drag=False, on_top=True, resizable=False, focus=True,
+                                            background_color="#121212")
+        self.window.events.loaded += self._loaded
+
+    def _loaded(self):
+        user32 = ctypes.windll.user32
+        try:  # pywebview'un formu (WinForms); başlıkla aramak aynı adlı iç pencereleri ya da başka SOUND'u bulabiliyor
+            self.hwnd = int(self.window.native.Handle.ToInt64())
+        except Exception:
+            self.hwnd = self._own_window()
+        if not self.hwnd:
+            return
+        style = user32.GetWindowLongW(self.hwnd, -20)  # GWL_EXSTYLE: görev çubuğunda / Alt+Tab'da görünmesin
+        user32.SetWindowLongW(self.hwnd, -20, (style | 0x80) & ~0x40000)  # +WS_EX_TOOLWINDOW, -WS_EX_APPWINDOW
+        try:  # Windows 11 yuvarlak köşe
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(self.hwnd, 33, ctypes.byref(ctypes.c_int(2)), 4)
+        except Exception:
+            pass
+
+    def _own_window(self):
+        """Bu sürecin menü penceresi. Başlıkla FindWindow kullanılmaz: aynı anda başka bir SOUND (test kopyası,
+        kapanmakta olan eski kopya) açıksa onun penceresini bulup taşıyordu."""
+        user32 = ctypes.windll.user32
+        me, found = os.getpid(), []
+        enum_proc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+        def check(hwnd, _):
+            pid = ctypes.c_ulong()
+            user32.GetWindowThreadProcessId(ctypes.c_void_p(hwnd), ctypes.byref(pid))
+            if pid.value == me:
+                title = ctypes.create_unicode_buffer(64)
+                user32.GetWindowTextW(ctypes.c_void_p(hwnd), title, 64)
+                if title.value == self.TITLE:
+                    found.append(hwnd)
+                    return False
+            return True
+        user32.EnumWindows(enum_proc(check), 0)
+        return found[0] if found else None
+
+    def state(self):
+        b = self.backend
+        now = b.tray_now or {}
+        track = now.get("track")
+        info = None
+        if track:
+            info = {"title": track.get("title") or "", "artist": track.get("artist") or "",
+                    "art": f"{self.base}/thumb/{track['id']}" if track.get("id") else ""}
+        return {"track": info, "playing": bool(now.get("playing")), "ui": b.lib.settings.get("ui") or {}}
+
+    def show(self):
+        """Sağ tık (tepsi iş parçacığı). Pencere henüz hazır değilse False: sistem menüsü açılır."""
+        if not self.hwnd or self.backend.quitting:
+            return False
+        threading.Thread(target=self._show, daemon=True).start()
+        return True
+
+    @staticmethod
+    def _set_pos(hwnd, x, y, w, h, flags):
+        """SetWindowPos türleri belirtilerek: belirtilmezse 64 bit Windows'ta HWND_TOPMOST (-1) bozuk tutamaca dönüşüyor
+        ve çağrı sessizce başarısız oluyordu (menü hep pywebview'un ilk konumunda açılıyordu)."""
+        from ctypes import wintypes
+        fn = ctypes.WinDLL("user32").SetWindowPos
+        fn.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+        fn.restype = wintypes.BOOL
+        return fn(hwnd, wintypes.HWND(-1), x, y, w, h, flags)  # HWND_TOPMOST
+
+    def _show(self):
+        user32 = ctypes.windll.user32
+
+        class POINT(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+        class RECT(ctypes.Structure):
+            _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long), ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+        class MONITORINFO(ctypes.Structure):
+            _fields_ = [("cbSize", ctypes.c_ulong), ("rcMonitor", RECT), ("rcWork", RECT), ("dwFlags", ctypes.c_ulong)]
+
+        pt = POINT()
+        user32.GetCursorPos(ctypes.byref(pt))
+        info = MONITORINFO(cbSize=ctypes.sizeof(MONITORINFO))
+        user32.GetMonitorInfoW(user32.MonitorFromPoint(pt, 2), ctypes.byref(info))
+        scale = (user32.GetDpiForWindow(self.hwnd) or 96) / 96
+        w, h = round(self.WIDTH * scale), round(self.HEIGHT * scale)
+        work = info.rcWork
+        gap = round(8 * scale)
+        icon = self.backend.tray.icon_rect() if self.backend.tray else None
+        if icon and icon[0] <= pt.x <= icon[2] + 2 and icon[1] - 2 <= pt.y <= icon[3] + 2:
+            # simgenin (görev çubuğunda ya da taşma kutusunda) hemen üstünde, ortalanmış
+            x = (icon[0] + icon[2]) // 2 - w // 2
+            y = icon[1] - h - gap if icon[1] - h - gap >= work.top else icon[3] + gap
+        else:  # simgenin yeri alınamadı (taşma kutusunda E_FAIL dönebiliyor): imlecin üstünde, ortalı; açılır kutuyu
+            lift = round(28 * scale)  # (taşma kutusu / görev çubuğu simgesi) örtmeyecek kadar yukarıda
+            x = pt.x - w // 2
+            y = pt.y - h - lift if pt.y - h - lift >= work.top else pt.y + lift
+        x = max(work.left, min(x, work.right - w))  # ekrandan taşmasın
+        y = max(work.top, min(y, work.bottom - h))
+        try:
+            self.window.evaluate_js(f"render({json.dumps(self.state())})")
+        except Exception:
+            pass
+        self._set_pos(self.hwnd, x, y, w, h, 0x0010)  # SWP_NOACTIVATE: gösterilmeden önce yerine
+        self.window.show()
+        self._set_pos(self.hwnd, x, y, w, h, 0x0040)  # SWP_SHOWWINDOW: show() sonrasında da aynı yerde kalsın
+        user32.SetForegroundWindow(self.hwnd)
+        self.visible = True
+        # dışarı tıklanınca (başka pencere öne geçince) kapan; WebView odağı almasa da çalışır
+        time.sleep(0.25)
+        while self.visible and user32.GetForegroundWindow() == self.hwnd:
+            time.sleep(0.1)
+        self.hide()
+
+    def hide(self):
+        if self.visible:
+            self.visible = False
+            try:
+                self.window.hide()
+            except Exception:
+                pass
+
+    def destroy(self):
+        try:
+            self.window.destroy()
+        except Exception:
+            pass
+
+
+class TrayMenuApi:
+    """traymenu.html'in çağırdıkları (pywebview js_api). Menü nesnesi alt çizgili: pywebview onu JS'e açmaz."""
+
+    def __init__(self, menu):
+        self._menu = menu
+
+    def command(self, action):
+        if action in ("toggle", "next", "previous"):
+            self._menu.backend.push("command", action)
+        if action != "toggle":
+            self._menu.hide()
+
+    def open(self):
+        self._menu.hide()
+        self._menu.backend.show_window()
+
+    def quit(self):
+        self._menu.hide()
+        self._menu.backend.quit_app()
+
+    def hide(self):
+        self._menu.hide()
+
+
 class Api:
     """Arayüzün (JavaScript) çağırabildiği fonksiyonlar: window.pywebview.api.<ad>(...)"""
 
@@ -1503,8 +1704,8 @@ class Api:
         except Exception as error:
             return {"error": friendly_error(error)}
 
-    def artist_mix(self, refs, count=30):
-        return self._b.artist_mix(refs, count)
+    def artist_mix(self, refs, count=30, popular=False):
+        return self._b.artist_mix(refs, count, popular is True)
 
     def radio(self, track):
         return self._b.radio(track)
@@ -1549,6 +1750,8 @@ class Api:
         self._b.lib.update_settings(changes)
         if "cache_mb" in changes:
             threading.Thread(target=self._b._trim_cache, daemon=True).start()
+        if "discord_presence" in changes and self._b.presence:
+            self._b.presence.set_enabled(changes["discord_presence"] is not False)
         return self._b.settings_state()
 
     def clear_cache(self):
@@ -1556,6 +1759,15 @@ class Api:
 
     def set_app_icon(self, accent):
         return self._b.set_app_icon(accent)
+
+    def set_autostart(self, on):
+        """Ayarlar > Arka plan > Bilgisayar açılınca başlat."""
+        try:
+            import autostart
+            autostart.set_enabled(bool(on))
+        except Exception as error:
+            return {**self._b.settings_state(), "error": f"Ayarlanamadı: {error}"}
+        return self._b.settings_state()
 
     def app_version(self):
         return {"version": selfupdate.current_version(), "git": selfupdate.available(),
@@ -1666,6 +1878,36 @@ class Api:
     def login_import(self, service, client_id=None, start_import=True):
         return self._b.login_import(service, client_id, start_import)
 
+    def set_album_cover(self, album_id, cover):
+        try:
+            return {"cover": self._b.lib.set_album_cover(album_id, cover)}
+        except ValueError as error:
+            return {"error": str(error)}
+        except OSError:
+            return {"error": "Resim kaydedilemedi."}
+
+    def pick_image(self):
+        """Kapak için resim seç (masaüstünde dosya penceresi, telefonda Android seçicisi). Arayüz küçültüp
+        set_album_cover'a gönderir; burada yalnızca okunur."""
+        import base64
+        paths = self._b.window.create_file_dialog(
+            webview.FileDialog.OPEN, file_types=("Resimler (*.jpg;*.jpeg;*.png;*.webp;*.gif;*.bmp)", "Tüm dosyalar (*.*)"))
+        if not paths:
+            return None
+        path = paths[0] if isinstance(paths, (list, tuple)) else paths
+        try:
+            if os.path.getsize(path) > 25_000_000:
+                return {"error": "Resim çok büyük (en fazla 25 MB)."}
+            with open(path, "rb") as f:
+                raw = f.read()
+        except OSError:
+            return {"error": "Resim açılamadı."}
+        kinds = [(b"\xff\xd8\xff", "jpeg"), (b"\x89PNG", "png"), (b"GIF8", "gif"), (b"BM", "bmp")]
+        mime = next((m for sig, m in kinds if raw.startswith(sig)), "webp" if raw[8:12] == b"WEBP" else None)
+        if not mime:
+            return {"error": "Bu dosya bir resim değil."}
+        return {"data": f"data:image/{mime};base64," + base64.b64encode(raw).decode()}
+
     def pick_import_files(self):
         paths = self._b.window.create_file_dialog(
             webview.FileDialog.OPEN, allow_multiple=True,
@@ -1758,6 +2000,9 @@ class Api:
 
     def listen_send(self, kind, data):
         return self._b.listen.send(kind, data)
+
+    def notify(self, title, body, target=""):
+        return self._b.notify(title, body, target)
 
     def drop_cache(self, track_id):
         """Önbellekteki dosya çalınamadı: silinir, şarkı yeniden YouTube'dan alınır."""
@@ -1857,6 +2102,23 @@ def _show_running_instance():
         return False
 
 
+def _autostart_state():
+    """None: bu platformda yok (telefon)."""
+    try:
+        import autostart
+        return autostart.enabled() if autostart.supported() else None
+    except Exception:
+        return None
+
+
+def _launched_at_startup():
+    try:
+        import autostart
+        return autostart.launched_at_startup()
+    except Exception:
+        return False
+
+
 def run():
     if not _acquire_single_instance():
         return
@@ -1873,7 +2135,7 @@ def run():
         "SOUND", url=base + "/index.html", js_api=Api(backend),
         width=geometry.get("width") or 1320, height=geometry.get("height") or 840,
         x=geometry.get("x"), y=geometry.get("y"), min_size=(980, 640),
-        maximized=bool(geometry.get("maximized")), background_color="#000000")
+        maximized=bool(geometry.get("maximized")), minimized=_launched_at_startup(), background_color="#000000")
     backend.window = window
     window.events.shown += backend.on_shown
     window.events.closing += backend.on_closing
@@ -1886,6 +2148,12 @@ def run():
                              lambda action: backend.push("command", action), backend.quit_app)
     if not backend.tray.start():
         backend.tray = None
+    elif IS_WINDOWS:
+        try:
+            backend.tray_menu = TrayMenu(backend, base)
+            backend.tray.on_menu = backend.tray_menu.show
+        except Exception:
+            backend.tray_menu = None  # sistem menüsü kalır
     options = {}
     if not IS_WINDOWS:
         # Linux: Qt WebEngine (Edge WebView2 ile aynı Chromium motoru). Arayüz boyutu canlı değişemiyor

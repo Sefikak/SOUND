@@ -268,11 +268,21 @@ def _pick_video(formats):
     return max(videos, key=lambda f: (f.get("height") or 0, (f.get("vcodec") or "").startswith("avc1"), f.get("tbr") or 0))
 
 
+NETWORK_ERROR = re.compile(r"getaddrinfo|name or service not known|name resolution|network is unreachable|no route to host|timed? ?out"
+                           r"|connection (?:reset|refused|aborted)|remote end closed|unable to download|failed to resolve|urlopen error"
+                           r"|nodename nor servname|connection error|ssl: ", re.I)
+
+
+def is_network_error(error):
+    """İnternet kesildiği için alınan hata: şarkıda bir sorun yok, bağlantı dönünce yeniden denenir."""
+    return not is_unavailable_error(error) and not is_age_error(error) and NETWORK_ERROR.search(str(error)) is not None
+
+
 def resolve_stream(track):
     """Şarkıyı indirmeden çalmak için YouTube'un doğrudan ses (ve görüntü) adresleri ve istenen HTTP başlıkları.
 
     Adresler birkaç saat geçerlidir ("expire"). Video engelliyse aynı şarkının başka bir yüklemesi kullanılır."""
-    options = {"quiet": True, "no_warnings": True, "noplaylist": True, "skip_download": True,
+    options = {"quiet": True, "no_warnings": True, "noplaylist": True, "skip_download": True, "socket_timeout": 12,
                "format": "bestaudio[ext=webm]/bestaudio/best", **JS_OPTIONS}
     alternative = None
     try:

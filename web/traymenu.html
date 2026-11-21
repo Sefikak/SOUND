@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>SOUND menü</title>
+<!-- Tepsi simgesine sağ tıklayınca açılan menü (Windows). Renkler kullanıcının Kişiselleştir ayarlarından (settings.ui)
+     gelir; webapp.TrayMenu.show() her açılışta render(durum) çağırır. -->
+<style>
+  :root { --accent: #8b5cf6; --accent-light: #b49bff; --bg: #121212; --card: #181818; --raise: #1f1f1f; --hover: #262626;
+          --text: #fff; --sub: #b3b3b3; --radius: 10px; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
+    font: 13.5px/1.35 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; user-select: none; -webkit-user-select: none; }
+  body { display: flex; flex-direction: column; padding: 8px; border: 1px solid #ffffff14; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  svg { display: block; }
+
+  .now { position: relative; display: flex; align-items: center; gap: 11px; padding: 9px; border-radius: var(--radius); overflow: hidden;
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 30%, var(--card)), var(--card) 75%); }
+  .art { flex: none; width: 48px; height: 48px; border-radius: calc(var(--radius) * .6); background: var(--raise) center/cover;
+    box-shadow: 0 4px 14px #0008; display: grid; place-items: center; color: var(--sub); }
+  .art.has svg { display: none; }
+  .art svg { width: 22px; height: 22px; }
+  .txt { min-width: 0; flex: 1; }
+  .t { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .a { color: var(--sub); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .eq { display: inline-flex; gap: 2px; align-items: flex-end; height: 10px; margin-right: 6px; vertical-align: 0; }
+  .eq i { width: 2.5px; background: var(--accent-light); border-radius: 1px; animation: eq 0.9s ease-in-out infinite; }
+  .eq i:nth-child(2) { animation-delay: -.3s; } .eq i:nth-child(3) { animation-delay: -.6s; }
+  @keyframes eq { 0%, 100% { height: 3px; } 50% { height: 10px; } }
+  body:not(.playing) .eq { display: none; }
+
+  .ctrl { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 10px 0 8px; }
+  .ib { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; color: var(--sub); transition: color .12s, background .12s; }
+  .ib:hover { color: var(--text); background: var(--hover); }
+  .ib svg { width: 18px; height: 18px; }
+  .pp { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: #fff;
+    box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 45%, transparent); transition: transform .1s, filter .12s; }
+  .pp:hover { filter: brightness(1.12); transform: scale(1.05); }
+  .pp:active { transform: scale(.96); }
+  .pp svg { width: 18px; height: 18px; }
+  .pp .pause, body.playing .pp .play { display: none; }
+  body.playing .pp .pause { display: block; }
+  body.empty .ctrl .ib { opacity: .35; pointer-events: none; }
+
+  .sep { height: 1px; background: #ffffff12; margin: 4px 2px; }
+  .item { display: flex; align-items: center; gap: 11px; width: 100%; padding: 8px 10px; border-radius: calc(var(--radius) * .7); text-align: left; }
+  .item:hover { background: var(--hover); }
+  .item svg { width: 17px; height: 17px; color: var(--sub); }
+  .item:hover svg { color: var(--accent-light); }
+  .item.open { font-weight: 650; }
+  .item.quit:hover { background: #ef44441f; }
+  .item.quit:hover svg { color: #f87171; }
+  .item kbd { margin-left: auto; color: var(--sub); font: 11.5px inherit; opacity: .7; }
+</style>
+</head>
+<body class="empty">
+  <div class="now">
+    <div class="art" id="art"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg></div>
+    <div class="txt"><div class="t" id="title">Şu an bir şey çalmıyor</div><div class="a"><span class="eq"><i></i><i></i><i></i></span><span id="artist">SOUND</span></div></div>
+  </div>
+  <div class="ctrl">
+    <button class="ib" data-cmd="previous" title="Önceki"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14L9.5 12z"/></svg></button>
+    <button class="pp" data-cmd="toggle" title="Çal / Duraklat">
+      <svg class="play" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>
+      <svg class="pause" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4.5v16H6zM13.5 4H18v16h-4.5z"/></svg>
+    </button>
+    <button class="ib" data-cmd="next" title="Sonraki"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l10.5-7z"/></svg></button>
+  </div>
+  <div class="sep"></div>
+  <button class="item open" data-act="open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18"/></svg>SOUND'u aç</button>
+  <button class="item quit" data-act="quit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v9"/><path d="M6.3 7.3a8 8 0 1 0 11.4 0"/></svg>Çıkış</button>
+<script>
+const BGS = {
+  dark: { bg: "#121212", card: "#181818", raise: "#1f1f1f", hover: "#262626" },
+  black: { bg: "#050505", card: "#0f0f0f", raise: "#161616", hover: "#1d1d1d" },
+  gray: { bg: "#1e1e1e", card: "#262626", raise: "#2c2c2c", hover: "#353535" },
+};
+const DEFAULT_ACCENT = "#8b5cf6";
+const hexRgb = h => { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
+const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+const hex = c => "#" + c.map(v => v.toString(16).padStart(2, "0")).join("");
+const api = () => window.pywebview && window.pywebview.api;
+
+/* uygulamadaki applyUI ile aynı renk kuralları (web/app.js BGS, "Renkli" arka plan vurgudan türer) */
+function theme(ui) {
+  ui = ui || {};
+  const accent = /^#[0-9a-f]{6}$/i.test(ui.accent || "") ? ui.accent.toLowerCase() : DEFAULT_ACCENT, ar = hexRgb(accent);
+  let bg = BGS[ui.bg || "dark"];
+  if (!bg) {
+    const t = (base, p) => hex(mix(hexRgb(base), ar, p));
+    bg = { bg: t("#121212", 0.07), card: t("#181818", 0.08), raise: t("#1f1f1f", 0.1), hover: t("#262626", 0.13) };
+  }
+  const root = document.documentElement.style;
+  root.setProperty("--accent", accent);
+  root.setProperty("--accent-light", accent === DEFAULT_ACCENT ? "#b49bff" : hex(mix(ar, [255, 255, 255], 0.35)));
+  for (const [k, v] of Object.entries(bg)) root.setProperty("--" + k, v);
+  root.setProperty("--radius", Math.max(0, Math.min(20, +ui.radius || 10)) + "px");
+}
+
+function render(state) {
+  state = state || {};
+  theme(state.ui);
+  const track = state.track;
+  document.body.classList.toggle("empty", !track);
+  document.body.classList.toggle("playing", !!(track && state.playing));
+  document.getElementById("title").textContent = track ? track.title : "Şu an bir şey çalmıyor";
+  document.getElementById("artist").textContent = track ? (track.artist || "") : "SOUND";
+  const art = document.getElementById("art"), src = track && track.art ? track.art.replace(/"/g, "") : "";
+  art.classList.remove("has");
+  art.style.backgroundImage = "";
+  if (src) {  // kapak yüklenemezse nota simgesi kalsın
+    const img = new Image();
+    img.onload = () => { if (img.src.endsWith(src.split("/").pop())) { art.style.backgroundImage = `url("${src}")`; art.classList.add("has"); } };
+    img.src = src;
+  }
+}
+
+document.addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if (!b || !api()) return;
+  if (b.dataset.cmd) {
+    api().command(b.dataset.cmd);
+    if (b.dataset.cmd === "toggle") document.body.classList.toggle("playing");  // anında tepki; asıl durum sonra gelir
+  } else if (b.dataset.act === "open") api().open();
+  else if (b.dataset.act === "quit") api().quit();
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape" && api()) api().hide(); });
+window.addEventListener("blur", () => { if (api()) api().hide(); });  // menü dışına tıklanınca kapanır
+document.addEventListener("contextmenu", e => e.preventDefault());
+</script>
+</body>
+</html>

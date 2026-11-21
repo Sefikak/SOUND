@@ -308,8 +308,9 @@ h1.big { font-size: 34px; font-weight: 800; letter-spacing: -.5px; }
 .qrow.now .t { color: var(--accent-light); }
 
 /* ---------- alt çubuk ---------- */
-#bar { grid-column: 1 / -1; display: grid; grid-template-columns: fit-content(340px) minmax(0, 1fr) auto;
+#bar { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(220px, 340px) minmax(0, 1fr) auto;
   align-items: center; padding: 0 12px; column-gap: 20px; }
+html:not(.mobile) #bar { column-gap: 12px; }  /* sağdaki düğmeler ilerleme çubuğuna yakın dursun */
 .np { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .np img { width: 58px; height: 58px; border-radius: 6px; object-fit: cover; background: #282828; flex: none; cursor: pointer; }
 .np .tt { padding: 0; min-width: 0; }
@@ -336,6 +337,7 @@ h1.big { font-size: 34px; font-weight: 800; letter-spacing: -.5px; }
   font-size: 12px; color: var(--sub); font-variant-numeric: tabular-nums; }
 .prog span { width: 42px; flex: none; padding-bottom: 2px; }
 .prog span:first-child { text-align: right; }
+html:not(.mobile) .prog span:last-child { width: auto; min-width: 28px; }  /* toplam süre yazısı kadar: sağında ölü alan kalmasın */
 #flame { flex: 1; height: 44px; cursor: pointer; min-width: 0; }
 .right { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
 input[type=range] { -webkit-appearance: none; appearance: none; width: 110px; height: 4px; border-radius: 4px; cursor: pointer; outline: 0;
@@ -417,7 +419,7 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .switch.on i { transform: translateX(20px); }
 select { background: #3a3a3a; color: var(--text); border: 1px solid #ffffff20; border-radius: 6px; padding: 6px 10px; font: inherit; outline: 0; }
 /* şarkı sözleri */
-.lyrics .lines { max-height: 280px; overflow-y: auto; scroll-behavior: smooth; mask-image: linear-gradient(transparent, #000 12%, #000 85%, transparent); padding: 10px 0; }
+.lyrics .lines { position: relative; overscroll-behavior: contain; max-height: 280px; overflow-y: auto; scroll-behavior: smooth; mask-image: linear-gradient(transparent, #000 12%, #000 85%, transparent); padding: 10px 0; }
 .lyrics .lines::-webkit-scrollbar { width: 0; }
 .lyrics .lines p { margin: 0; padding: 5px 0; font-size: 17px; font-weight: 750; line-height: 1.35; color: #ffffff55; cursor: pointer; transition: color .25s, transform .25s; transform-origin: left; }
 .lyrics .lines p:hover { color: #ffffffaa; }
@@ -494,7 +496,7 @@ select { background: #3a3a3a; color: var(--text); border: 1px solid #ffffff20; b
 #app.bar-top { grid-template-rows: var(--bar-h) minmax(0, 1fr); padding: 0 8px 8px; }
 #app.bar-top #side, #app.bar-top #main, #app.bar-top #panel { grid-row: 2; }
 #app.bar-top #bar { grid-row: 1; }
-#app.np-right #bar { grid-template-columns: auto minmax(0, 1fr) fit-content(340px); }
+#app.np-right #bar { grid-template-columns: auto minmax(0, 1fr) minmax(220px, 340px); }
 #app.np-right .np { order: 3; flex-direction: row-reverse; text-align: right; }
 #app.np-right .center { order: 2; }
 #app.np-right .right { order: 1; justify-content: flex-start; }
@@ -730,3 +732,70 @@ body.tint-logo .brand .logo-tint { display: block; }
 body.resizing, body.resizing * { cursor: col-resize !important; }
 body.resizing #app { transition: none !important; }
 html.mobile .grip { display: none; }
+
+/* gruplar ve Birlikte dinle */
+.sc-h2 { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sc-h2 .pill svg, .sc-jambtn svg, .row-btns .pill svg { width: 16px; height: 16px; margin-right: 6px; vertical-align: -3px; }
+.sc-top { display: flex; align-items: center; }
+.sc-top .li-s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-jambtn { flex: none; margin-left: auto; display: inline-flex; align-items: center; }
+.sc-from { font-size: 12px; margin-bottom: 2px; }
+.sc-sys { align-self: center; max-width: 86%; padding: 4px 10px; border-radius: 10px; background: #ffffff10; color: var(--sub); font-size: 12px; text-align: center; }
+.sc-jam { gap: 8px; min-width: 210px; }
+.sc-jam-t { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.sc-jam-t svg { width: 20px; height: 20px; flex: none; }
+.sc-jam .pill { align-self: flex-start; }
+.sc-msg.mine.sc-jam .pill { background: #ffffff; color: #000; }
+.sc-pick { max-height: 46vh; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.sc-pick label.sc-row { cursor: pointer; }
+.sc-pick input { margin-left: auto; width: 20px; height: 20px; accent-color: var(--accent); flex: none; }
+.jam-call { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; padding: 6px 4px 0; }
+.jam-call h3 { margin: 10px 0 0; }
+.jam-call .row-btns { justify-content: center; width: 100%; }
+.jam-ring { width: 76px; height: 76px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: #fff; animation: jam-ring 1.4s ease-out infinite; }
+.jam-ring svg { width: 34px; height: 34px; }
+@keyframes jam-ring { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 70%, transparent); } 100% { box-shadow: 0 0 0 26px transparent; } }
+.textbtn.danger { color: var(--danger); }
+
+/* arkadaşlık istekleri: üst çubuk düğmesi + açılır liste, profil sayfasında vurgulu kart */
+.reqwrap { position: relative; margin-left: auto; }
+#reqBtn { position: relative; }
+#reqBtn.on { background: var(--accent); color: #fff; }
+#reqDrop { position: absolute; right: 0; top: 44px; z-index: 20; width: min(380px, calc(100vw - 24px)); max-height: 70vh; overflow-y: auto;
+  padding: 6px; border-radius: 12px; background: #242424; box-shadow: 0 16px 40px #000c; animation: pop .12s var(--ease); }
+#reqDrop .sh { padding: 8px 10px 6px; color: var(--sub); font-size: 12.5px; font-weight: 700; }
+#reqDrop .sc-row { padding: 6px; }
+#reqDrop .sc-row .pill { padding: 5px 11px; font-size: 12.5px; }
+#reqDrop .sc-note { padding: 4px 10px 8px; }
+#reqDrop .req-find { width: 100%; justify-content: flex-start; text-align: left; margin-top: 4px; border-top: 1px solid #ffffff14; border-radius: 0 0 8px 8px; color: var(--sub); }
+.sc-req { margin: 4px 0 18px; padding: 6px 10px 8px; border-radius: 14px; background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); }
+.sc-req h2 { display: flex; align-items: center; gap: 8px; margin: 8px 6px; }
+.sc-req h2 svg { width: 20px; height: 20px; color: var(--accent); }
+
+/* albüm kapağı: tıkla / üstüne bırak → değiştir */
+.cover-edit { position: relative; flex: none; cursor: pointer; border-radius: 8px; }
+.cover-edit .cover-hint { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  border-radius: inherit; background: #000a; color: #fff; opacity: 0; transition: opacity .15s; pointer-events: none; }
+.cover-edit .cover-hint svg { width: 34px; height: 34px; }
+.cover-edit:hover .cover-hint, .cover-edit.drop-on .cover-hint { opacity: 1; }
+.cover-edit.drop-on { outline: 3px solid var(--accent); outline-offset: 3px; }
+.cover-sub { margin: -6px 0 14px; }
+.cover-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+.cover-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(74px, 1fr)); gap: 8px; max-height: 300px; overflow-y: auto; padding: 2px; }
+.cover-pick { aspect-ratio: 1; border-radius: 6px; overflow: hidden; padding: 0; background: var(--raise); outline: 2px solid transparent; transition: outline-color .12s, transform .12s; }
+.cover-pick img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cover-pick:hover { transform: scale(1.04); }
+.cover-pick.on { outline-color: var(--accent); }
+.cover-tip { font-size: 12.5px; margin-top: 12px; }
+
+/* alt çubuktaki boşluğa uzanan kutu (fitBarNotch): kesilen sol-alt kısımda içerik kalmasın */
+#page { padding-bottom: calc(40px + var(--ext, 0px)); }
+#panel .inner { padding-bottom: calc(20px + var(--ext, 0px)); }
+#libList { padding-bottom: var(--ext, 0px); }
+
+#bar { pointer-events: none; }  /* saydam çubuk alttaki uzayan kutuyu örtmesin; yalnızca öğeleri tıklanır */
+#bar > * { pointer-events: auto; }
+/* kutu alevin üstüne kadar inince kontrol sekmesinin içe kavisleri yeni alt kenara iner (fitBarNotch) */
+#app.notched .ctrl::before, #app.notched .ctrl::after { bottom: 0; }
+

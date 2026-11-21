@@ -75,6 +75,7 @@ class Library:
             "recent_searches": [],
             "history": [],
             "home_cache": None,
+            "album_covers": {},  # albüm → {"track": şarkı bilgisi} ya da {"image": dosya adı, "sha": özet}
             "volume": 0.7,
             "youtube_auth": None,
             "settings": dict(DEFAULT_SETTINGS),
@@ -485,9 +486,113 @@ class Library:
             self._save_album(album_id)
         self._notify()
 
+    # ---------- albüm kapağı ----------
+    # Kapak ya bir şarkının resmi ({"track": bilgi}) ya da kullanıcının yüklediği resimdir ({"image": dosya}).
+    # Resimler data/covers altında; eski dosya hemen silinmez (geri al), kullanılmayanlar açılışta temizlenir.
+
+    def album_cover(self, album_id):
+        return self.data["album_covers"].get(album_id)
+
+    def set_album_cover(self, album_id, cover):
+        """cover: None (ilk şarkının resmine dön), {"track": şarkı} ya da {"image": "data:image/...;base64,..."}."""
+        if album_id not in self.data["albums"]:
+            raise ValueError("Albüm bulunamadı.")
+        value = self._cover_value(album_id, cover)
+        self.checkpoint("Albüm kapağı")
+        with self._tx():
+            self._store_cover(album_id, value)
+        self._notify()
+        return value
+
+    def _cover_value(self, album_id, cover):
+        if not cover:
+            return None
+        if isinstance(cover.get("track"), dict) and cover["track"].get("id"):
+            t = cover["track"]
+            return {"track": {k: t.get(k) for k in ("id", "title", "artist", "thumbnail") if t.get(k) is not None}}
+        image = cover.get("image")
+        if isinstance(image, str) and image.startswith("data:image/"):
+            return self._save_cover_image(album_id, image)
+        if isinstance(image, str) and re.fullmatch(r"[0-9a-f]{10}_[0-9a-f]{12}\.(jpg|png|webp)", image):
+            return {"image": image, "sha": cover.get("sha") or image.split("_")[1].split(".")[0]}  # zaten bizde (geri al)
+        raise ValueError("Geçersiz kapak.")
+
+    @staticmethod
+    def covers_dir():
+        return os.path.join(DATA_DIR, "covers")  # DATA_DIR telefonda çalışırken değişir (android_main)
+
+    def _save_cover_image(self, album_id, data_url):
+        import base64
+        import hashlib
+        head, _, body = data_url.partition(",")
+        kind = re.fullmatch(r"data:image/(jpeg|png|webp);base64", head)
+        if not kind:
+            raise ValueError("Resim JPEG, PNG ya da WebP olmalı.")
+        raw = base64.b64decode(body, validate=False)
+        if len(raw) > 600_000:
+            raise ValueError("Resim çok büyük.")
+        magic = {"jpeg": raw[:3] == b"\xff\xd8\xff", "png": raw[:8] == b"\x89PNG\r\n\x1a\n",
+                 "webp": raw[:4] == b"RIFF" and raw[8:12] == b"WEBP"}[kind.group(1)]
+        if not magic:
+            raise ValueError("Resim okunamadı.")
+        sha = hashlib.sha1(raw).hexdigest()[:12]
+        ext = {"jpeg": "jpg", "png": "png", "webp": "webp"}[kind.group(1)]
+        name = f"{album_id[:10]}_{sha}.{ext}"
+        folder = self.covers_dir()
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, name)
+        if not os.path.exists(path):
+            with open(path + ".part", "wb") as f:
+                f.write(raw)
+            os.replace(path + ".part", path)
+        return {"image": name, "sha": sha}
+
+    def _store_cover(self, album_id, value):
+        covers = self.data["album_covers"]
+        if value is None:
+            covers.pop(album_id, None)
+        else:
+            covers[album_id] = value
+        self._write_kv("album_covers", covers)
+
+    def cover_document(self, album_id):
+        """Hesap eşitlemesine giden hâl: resim dosyası gömülü (data URL) gider ki diğer cihazlar da görsün."""
+        cover = self.data["album_covers"].get(album_id)
+        if not cover or "image" not in cover:
+            return cover
+        cache = self.__dict__.setdefault("_cover_urls", {})
+        if cover["image"] not in cache:
+            import base64
+            path = os.path.join(self.covers_dir(), cover["image"])
+            try:
+                with open(path, "rb") as f:
+                    raw = f.read()
+            except OSError:
+                return None  # dosya kaybolmuş: kapaksız say
+            mime = {"jpg": "jpeg", "png": "png", "webp": "webp"}[cover["image"].rsplit(".", 1)[1]]
+            cache[cover["image"]] = f"data:image/{mime};base64," + base64.b64encode(raw).decode()
+        return {"image": cache[cover["image"]], "sha": cover.get("sha")}
+
+    def tidy_covers(self):
+        """Hiçbir albümün kullanmadığı kapak resimlerini sil (açılışta)."""
+        used = {c["image"] for c in self.data["album_covers"].values() if c and c.get("image")}
+        folder = self.covers_dir()
+        try:
+            names = os.listdir(folder)
+        except OSError:
+            return
+        for name in names:
+            if name not in used:
+                try:
+                    os.remove(os.path.join(folder, name))
+                except OSError:
+                    pass
+
     def delete_album(self, album_id):
         with self._tx():
             self.data["albums"].pop(album_id, None)
+            if self.data["album_covers"].pop(album_id, None) is not None:
+                self._write_kv("album_covers", self.data["album_covers"])
             self.db.execute("DELETE FROM albums WHERE id=?", (album_id,))
             self.db.execute("DELETE FROM album_tracks WHERE album_id=?", (album_id,))
             self._prune()
@@ -621,6 +726,7 @@ class Library:
                 "favorites": list(self.data["favorites"]),
                 "albums": copy.deepcopy(self.data["albums"]),
                 "folders": copy.deepcopy(self.data["folders"]),
+                "covers": copy.deepcopy(self.data["album_covers"]),
                 "tracks": {i: dict(tracks[i]) for i in used if i in tracks},
             })
             del self._undo[:-30]
@@ -646,6 +752,9 @@ class Library:
                 self.data["favorites"] = snap["favorites"]
                 self.data["albums"] = snap["albums"]
                 self.data["folders"] = snap["folders"]
+                if "covers" in snap:
+                    self.data["album_covers"] = snap["covers"]
+                    self._write_kv("album_covers", snap["covers"])
                 self._write_list("favorites", snap["favorites"])
                 self.db.execute("DELETE FROM albums")
                 self.db.execute("DELETE FROM album_tracks")
@@ -694,6 +803,8 @@ class Library:
                 for album_id, album in albums.items():
                     if album is None:
                         data["albums"].pop(album_id, None)
+                        if data["album_covers"].pop(album_id, None) is not None:
+                            self._write_kv("album_covers", data["album_covers"])
                         self.db.execute("DELETE FROM albums WHERE id=?", (album_id,))
                         self.db.execute("DELETE FROM album_tracks WHERE album_id=?", (album_id,))
                         continue
@@ -713,6 +824,17 @@ class Library:
                                                 "source": album.get("source"), "tracks": ids}
                     self._save_album(album_id)
                     self._write_album_tracks(album_id, ids)
+                    # "cover" alanı yoksa gönderen eski bir sürümdür: yerel kapak korunur
+                    if "cover" in album and not (merge and data["album_covers"].get(album_id)):
+                        cover = album["cover"]
+                        mine = data["album_covers"].get(album_id)
+                        if cover and cover.get("sha") and mine and mine.get("sha") == cover.get("sha"):
+                            pass  # aynı resim zaten bizde
+                        else:
+                            try:
+                                self._store_cover(album_id, self._cover_value(album_id, cover))
+                            except (ValueError, OSError):
+                                pass  # bozuk kapak eşitlemeyi durdurmasın
                 for album_id, album in data["albums"].items():  # silinen klasörün albümleri köke
                     if album.get("folder") and album["folder"] not in data["folders"]:
                         album["folder"] = None

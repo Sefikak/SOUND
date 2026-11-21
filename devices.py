@@ -132,11 +132,12 @@ class Devices:
                 time.sleep(3)
                 continue
             account = (self.cloud.user or {}).get("id")
+            started = time.time()
             try:
                 self._session(self.cloud.devices_key(), account)
                 delay = 2
             except Exception:
-                delay = min(delay * 2, 60)
+                delay = 2 if time.time() - started > 60 else min(delay * 2, 30)
             finally:
                 self.connected = False
                 self.peers = {}

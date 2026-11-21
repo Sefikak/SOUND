@@ -16,7 +16,12 @@ UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 PROFILE_FIELDS = "id,username,display_name,bio,showcase"
 PAGE_SIZE = 50
 BEAT_SECONDS = 25
-METHODS = {"overview", "save_profile", "search", "profile", "add_friend", "accept", "remove_friend", "messages", "send", "mark_read"}
+METHODS = {"overview", "save_profile", "search", "profile", "add_friend", "accept", "remove_friend", "messages", "send", "mark_read",
+           "create_group", "group", "group_messages", "group_send", "group_add", "group_remove", "group_leave", "group_admin",
+           "group_rename", "group_read"}
+ROOM_CODE = re.compile(r"[A-Z0-9]{6}")  # listen.CODE ile aynı biçim
+MESSAGE_FIELDS = "id,sender,recipient,body,kind,created_at,read_at"
+GROUP_MESSAGE_FIELDS = "id,group_id,sender,body,kind,created_at"
 
 
 def _text(value, limit):
@@ -39,7 +44,27 @@ def _friendly(error):
         return "Bu kişiyle zaten bir arkadaşlık isteğin var."
     if "row-level security" in text:
         return "Bu işlem için arkadaş olmanız gerekiyor."
+    if "PGRST202" in text or "PGRST205" in text or ("group" in text and "does not exist" in text):
+        return "Gruplar sunucuda henüz kurulmamış (supabase/groups.sql çalıştırılmalı)."
     return text
+
+
+def _body(body, kind):
+    """Mesaj gövdesi; ortak dinleme davetinde (jam) gövde oda kodudur."""
+    if kind not in ("text", "jam"):
+        raise CloudError("Geçersiz mesaj türü.")
+    body = _text(body, 2000)
+    if kind == "jam" and not ROOM_CODE.fullmatch(body):
+        raise CloudError("Geçersiz oda kodu.")
+    if not body:
+        raise CloudError("Boş mesaj gönderilemez.")
+    return body
+
+
+def _members(value):
+    if not isinstance(value, list) or len(value) > 49:
+        raise CloudError("Geçersiz üye listesi.")
+    return [_peer(v) for v in value]
 
 
 class Social:
@@ -129,6 +154,15 @@ class Social:
             else:
                 out["outgoing" if mine else "incoming"].append(person)
         out["friends"].sort(key=lambda p: (-p["unread"], (p["display_name"] or p["username"]).casefold()))
+        try:
+            out["groups"] = self._rest("POST", "rpc/my_groups", {}) or []
+            self._groups = out["groups"]
+        except CloudError as error:
+            if _friendly(error).startswith("Gruplar sunucuda"):
+                out["groups"] = None  # groups.sql henüz çalıştırılmadı
+            else:
+                # ağ kopması vb.: grup bölümü kaybolmasın, son bilinen liste kalsın
+                out["groups"] = getattr(self, "_groups", [])
         return out
 
     def search(self, query):
@@ -174,21 +208,86 @@ class Social:
     def messages(self, peer, before=None):
         me = self.uid
         _peer(peer)
-        path = f"messages?select=id,sender,recipient,body,created_at,read_at&or=(and(sender.eq.{me},recipient.eq.{peer}),and(sender.eq.{peer},recipient.eq.{me}))&order=id.desc&limit={PAGE_SIZE}"
+        path = f"messages?select={MESSAGE_FIELDS}&or=(and(sender.eq.{me},recipient.eq.{peer}),and(sender.eq.{peer},recipient.eq.{me}))&order=id.desc&limit={PAGE_SIZE}"
         if isinstance(before, int) and not isinstance(before, bool):
             path += f"&id=lt.{before}"
         return list(reversed(self._rest("GET", path) or []))
 
-    def send(self, peer, body):
-        body = _text(body, 2000)
-        if not body:
-            return {"error": "Boş mesaj gönderilemez."}
-        rows = self._rest("POST", "messages", {"recipient": _peer(peer), "body": body}, "return=representation")
+    def send(self, peer, body, kind="text"):
+        record = {"recipient": _peer(peer), "body": _body(body, kind)}
+        if kind != "text":
+            record["kind"] = kind
+        try:
+            rows = self._rest("POST", "messages", record, "return=representation")
+        except CloudError as error:
+            if kind != "text" and "kind" in str(error):
+                return {"error": "Davet için sunucu güncellenmeli (supabase/groups.sql çalıştırılmalı)."}
+            raise
         return rows[0] if rows else {"error": "Mesaj gönderilemedi."}
 
     def mark_read(self, peer):
         now = datetime.now(timezone.utc).isoformat()
         self._rest("PATCH", f"messages?sender=eq.{_peer(peer)}&recipient=eq.{self.uid}&read_at=is.null", {"read_at": now}, "return=minimal")
+        return {"ok": True}
+
+    # ---------- gruplar ----------
+
+    def create_group(self, name, members):
+        name = _text(name, 40)
+        if not name:
+            return {"error": "Grup adını yaz."}
+        group_id = self._rest("POST", "rpc/create_group", {"p_name": name, "p_members": _members(members)})
+        return {"id": group_id}
+
+    def group(self, group_id):
+        group_id = _peer(group_id)
+        rows = self._rest("GET", f"groups?select=id,name,created_by,created_at&id=eq.{group_id}") or []
+        if not rows:
+            return {"error": "Bu grubu göremiyorsun; çıkarılmış olabilirsin."}
+        members = self._rest("GET", f"group_members?select=user_id,role,joined_at&group_id=eq.{group_id}&order=joined_at") or []
+        people = self._people(m["user_id"] for m in members)
+        out = []
+        for m in members:
+            person = people.get(m["user_id"]) or {"id": m["user_id"], "username": "silinmis", "display_name": "Silinmiş hesap"}
+            out.append({**person, "role": m["role"]})
+        me = next((m for m in out if m["id"] == self.uid), None)
+        friends = {link["requester"] if link["addressee"] == self.uid else link["addressee"]
+                   for link in self._links() if link["status"] == "accepted"}
+        return {**rows[0], "members": out, "admin": bool(me and me["role"] == "admin"), "friends": sorted(friends)}
+
+    def group_messages(self, group_id, before=None):
+        path = f"group_messages?select={GROUP_MESSAGE_FIELDS}&group_id=eq.{_peer(group_id)}&order=id.desc&limit={PAGE_SIZE}"
+        if isinstance(before, int) and not isinstance(before, bool):
+            path += f"&id=lt.{before}"
+        return list(reversed(self._rest("GET", path) or []))
+
+    def group_send(self, group_id, body, kind="text"):
+        record = {"group_id": _peer(group_id), "body": _body(body, kind), "kind": kind}
+        rows = self._rest("POST", "group_messages", record, "return=representation")
+        return rows[0] if rows else {"error": "Mesaj gönderilemedi."}
+
+    def group_add(self, group_id, members):
+        self._rest("POST", "rpc/add_group_members", {"g": _peer(group_id), "p_members": _members(members)})
+        return {"ok": True}
+
+    def group_remove(self, group_id, peer):
+        self._rest("POST", "rpc/remove_group_member", {"g": _peer(group_id), "u": _peer(peer)})
+        return {"ok": True}
+
+    def group_leave(self, group_id):
+        self._rest("POST", "rpc/leave_group", {"g": _peer(group_id)})
+        return {"ok": True}
+
+    def group_admin(self, group_id, peer, on):
+        self._rest("POST", "rpc/set_group_admin", {"g": _peer(group_id), "u": _peer(peer), "on_off": on is True})
+        return {"ok": True}
+
+    def group_rename(self, group_id, name):
+        self._rest("POST", "rpc/rename_group", {"g": _peer(group_id), "p_name": _text(name, 40)})
+        return {"ok": True}
+
+    def group_read(self, group_id):
+        self._rest("POST", "rpc/mark_group_read", {"g": _peer(group_id)})
         return {"ok": True}
 
     # ---------- anlık bildirimler ----------
@@ -210,11 +309,14 @@ class Social:
             if not self._signed_in():
                 time.sleep(3)
                 continue
+            started = time.time()
             try:
                 self._session(self.uid)
                 delay = 3
             except Exception:
-                delay = min(delay * 2, 120)
+                # bir süre çalışmış bağlantı koptuysa hemen yeniden bağlan; art arda kopuşta en çok 30 sn bekle
+                # (yeniden bağlanınca "ready" gelir, arayüz kaçırdıklarını tazeler)
+                delay = 3 if time.time() - started > 60 else min(delay * 2, 30)
             time.sleep(delay)
 
     def _session(self, uid):
@@ -234,8 +336,14 @@ class Social:
         changes = [{"event": "*", "schema": "public", "table": "messages", "filter": "recipient=eq." + uid},
                    {"event": "*", "schema": "public", "table": "messages", "filter": "sender=eq." + uid},
                    {"event": "*", "schema": "public", "table": "social_pings", "filter": "user_id=eq." + uid}]
+        # gruplar ayrı kanalda: groups.sql çalıştırılmamışsa yalnızca bu kanal reddedilir, DM'ler etkilenmez.
+        # Süzgeç yok: satır güvenliği herkese yalnızca üyesi olduğu grupların mesajlarını iletir.
+        group_topic = "realtime:groups-" + cloud.state["device"]
+        group_changes = [{"event": "INSERT", "schema": "public", "table": "group_messages"}]
         try:
             send("phx_join", {"config": {"broadcast": {"self": False}, "presence": {"key": ""}, "postgres_changes": changes}, "access_token": token})
+            send("phx_join", {"config": {"broadcast": {"self": False}, "presence": {"key": ""}, "postgres_changes": group_changes},
+                              "access_token": token}, group_topic)
             ws.settimeout(5)
             beat = time.time()
             while self._signed_in() and self.uid == uid:
@@ -246,6 +354,7 @@ class Social:
                     if fresh != token:
                         token = fresh
                         send("access_token", {"access_token": token})
+                        send("access_token", {"access_token": token}, group_topic)
                 try:
                     raw = ws.recv()
                 except websocket.WebSocketTimeoutException:
@@ -254,6 +363,12 @@ class Social:
                     raise ConnectionError("bağlantı kapandı")
                 message = json.loads(raw)
                 event, payload = message.get("event"), message.get("payload") or {}
+                if message.get("topic") == group_topic:
+                    if event == "postgres_changes":
+                        data = payload.get("data") or {}
+                        if data.get("type") == "INSERT":
+                            self._emit({"type": "gmessage", "message": data.get("record") or {}})
+                    continue
                 if event == "system" and payload.get("extension") == "postgres_changes" and payload.get("status") == "ok":
                     self._emit({"type": "ready"})
                 elif event == "postgres_changes":

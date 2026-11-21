@@ -7,7 +7,7 @@ gerekmez, kanalın adı oda kodudur. Odaya ilk giren yöneticidir (host); o çı
 Mesaj türleri
     state  yönetici -> herkes: çalan şarkı, konum, sıra
     hello  üye -> yönetici: "tam durumu gönder"
-    cmd    üye -> yönetici: çal/duraklat, geç, sar, şarkı ekle (Discord botu da bu komutları kullanacak)
+    cmd    üye -> yönetici: çal/duraklat, geç, sar, şarkı ekle
     ping/pong  saat farkı ölçümü (yalnızca bu modülün içinde kalır)
 
 Odadaki herkesten gelen veri güvenilmez sayılır: şarkı adresleri kimlikten yeniden kurulur, metinler kısaltılır.

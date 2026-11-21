@@ -18,6 +18,8 @@ class Tray:
         self.on_show, self.on_command, self.on_quit = on_show, on_command, on_quit
         self.icon = None
         self.playing = False
+        self.on_balloon = None  # bildirime tıklanınca (Windows)
+        self.on_menu = None     # Windows: sağ tıkta temalı menü (webapp.TrayMenu.show); True dönerse sistem menüsü açılmaz
 
     def start(self):
         if pystray is None:
@@ -35,6 +37,7 @@ class Tray:
                 item("Çıkış", lambda: self.on_quit()),
             )
             self.icon = pystray.Icon("SOUND", image, "SOUND", menu)
+            self._hook_balloon_click()
             ready = threading.Event()
 
             def run():
@@ -52,6 +55,31 @@ class Tray:
             self.icon = None
             return False
 
+    def icon_rect(self):
+        """Windows: simgenin ekrandaki yeri (left, top, right, bottom, fiziksel piksel); taşma kutusundaysa oradaki yeri.
+        Bulunamazsa None."""
+        if not self.icon or not getattr(self.icon, "_hwnd", None):
+            return None
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class NOTIFYICONIDENTIFIER(ctypes.Structure):
+                _fields_ = [("cbSize", wintypes.DWORD), ("hWnd", wintypes.HWND), ("uID", wintypes.UINT),
+                            ("guidItem", ctypes.c_byte * 16)]
+            ident = NOTIFYICONIDENTIFIER(cbSize=ctypes.sizeof(NOTIFYICONIDENTIFIER), hWnd=self.icon._hwnd,
+                                         uID=id(self.icon) & 0xFFFFFFFF)  # pystray simgeyi id(icon) ile kaydediyor
+            rect = wintypes.RECT()
+            fn = ctypes.WinDLL("shell32").Shell_NotifyIconGetRect
+            fn.argtypes = [ctypes.POINTER(NOTIFYICONIDENTIFIER), ctypes.POINTER(wintypes.RECT)]
+            if fn(ctypes.byref(ident), ctypes.byref(rect)) != 0:  # S_OK değil
+                return None
+            if rect.right <= rect.left or rect.bottom <= rect.top:
+                return None
+            return rect.left, rect.top, rect.right, rect.bottom
+        except Exception:
+            return None
+
     def set_state(self, title, playing):
         """İmlecin üstüne gelince görünen yazı (çalan şarkı) ve menüdeki Çal/Duraklat."""
         if not self.icon:
@@ -63,10 +91,42 @@ class Tray:
         except Exception:
             pass
 
-    def notify(self, message):
+    def _hook_balloon_click(self):
+        """pystray bildirime tıklamayı ve sağ tıkı ayrıca bildirmiyor: Windows iletileri burada yakalanır
+        (NIN_BALLOONUSERCLICK, WM_RBUTTONUP)."""
+        handler = getattr(self.icon, "_on_notify", None)
+        if handler is None:
+            return
+
+        def on_notify(wparam, lparam):
+            if lparam == 0x0205 and self.on_menu:  # WM_RBUTTONUP: kendi menümüz; açılamazsa sistem menüsü
+                try:
+                    if self.on_menu():
+                        return
+                except Exception:
+                    pass
+            if lparam == 0x0405:  # NIN_BALLOONUSERCLICK
+                action, self.on_balloon = self.on_balloon, None
+                if action:
+                    threading.Thread(target=action, daemon=True).start()
+                return
+            return handler(wparam, lparam)
+        try:
+            self.icon._on_notify = on_notify
+            self.icon._message_handlers[0x0400 + 11] = on_notify  # pystray'in WM_NOTIFY numarası
+        except Exception:
+            pass
+
+    def notify(self, message, title="SOUND", on_click=None):
         if self.icon:
             try:
-                self.icon.notify(message, "SOUND")
+                self.on_balloon = on_click
+                try:  # Windows: sistemin bildirim sesi çalmasın, SOUND kendi yumuşak sesini çalıyor (web/notify.wav)
+                    from pystray._util import win32
+                    self.icon._message(win32.NIM_MODIFY, win32.NIF_INFO, szInfo=message[:250], szInfoTitle=title[:60],
+                                       dwInfoFlags=0x10)  # NIIF_NOSOUND
+                except Exception:
+                    self.icon.notify(message, title)
             except Exception:
                 pass
 

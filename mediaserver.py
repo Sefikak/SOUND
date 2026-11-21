@@ -148,6 +148,11 @@ class Handler(BaseHTTPRequestHandler):
                 video_id = path[7:]
                 source = urllib.parse.parse_qs(parsed.query).get("src", [None])[0]
                 self._file(_thumbnail(video_id, source) if VIDEO_ID.match(video_id) else None, cache=True)
+            elif path.startswith("/cover/"):  # kullanıcının yüklediği albüm kapağı (library.set_album_cover)
+                import library
+                name = path[7:]
+                ok = re.fullmatch(r"[0-9a-f]{10}_[0-9a-f]{12}\.(jpg|png|webp)", name)
+                self._file(_inside(library.Library.covers_dir(), name) if ok else None, cache=True)
             elif path == "/art":
                 self._file(_art(urllib.parse.parse_qs(parsed.query).get("src", [None])[0]), cache=True)
             else:

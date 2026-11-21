@@ -13,12 +13,14 @@ import json
 import os
 import secrets
 import threading
+import socket
+import ssl
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from library import BASE_DIR, DATA_DIR
 
@@ -26,12 +28,33 @@ CONFIG_FILE = os.path.join(BASE_DIR, "cloud_config.json")
 STATE_FILE = os.path.join(DATA_DIR, "cloud.json")
 CALLBACK_PORT = 43118
 CALLBACK_URL = f"http://127.0.0.1:{CALLBACK_PORT}/auth/callback"
-POLL_SECONDS = 30   # Realtime çalışmazsa yedek yoklama
+# Yoklama YOK (kullanıcı isteği, 2026-11-21: "sürekli yapmasın"). Eşitleme yalnızca: uygulama açılınca bir kez,
+# kullanıcı bir şey değiştirince (yalnızca değişen kayıt gider), elle "Şimdi eşitle" ve başka bir cihaz gerçekten
+# bir şey değiştirdiğinde (Realtime bildirimi; o zaman da yalnızca yeni satırlar iner).
 PUSH_DELAY = 1.5
 REALTIME_BEAT = 25  # Realtime sunucusu ~60 sn sessiz bağlantıyı kapatır
 REALTIME_OFF_RETRY = 600  # tablo Realtime yayınında değilse (schema.sql son blok) seyrek dene
 TRACK_META = ("id", "title", "artist", "duration", "thumbnail", "url")
 
+
+
+_HANDSHAKE_ERRORS = (ConnectionResetError, ConnectionAbortedError, ssl.SSLError, socket.gaierror)  # gaierror: adres çözülemedi
+CONNECT_TRIES = 3
+
+
+def _open_retrying(req, timeout):
+    """Bağlantı kurulurken koparılırsa ya da adres çözülemezse (zayıf mobil hat, DPI aşma araçları)
+    kısa aralıkla yeniden dener. URLError yalnızca istek gönderilirken çıkar: sunucu isteği almamıştır, tekrar güvenli."""
+    for attempt in range(CONNECT_TRIES):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.read()
+        except urllib.error.HTTPError:
+            raise
+        except urllib.error.URLError as error:
+            if attempt == CONNECT_TRIES - 1 or not isinstance(error.reason, _HANDSHAKE_ERRORS):
+                raise
+            time.sleep(0.4 * (attempt + 1))
 
 class CloudError(Exception):
     pass
@@ -182,8 +205,7 @@ class Cloud:
         for k, v in (headers or {}).items():
             req.add_header(k, v)
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                raw = resp.read()
+            raw = _open_retrying(req, timeout)
         except urllib.error.HTTPError as error:
             raw = error.read().decode("utf-8", "replace")
             if error.code == 401 and token:
@@ -340,8 +362,8 @@ class Cloud:
 
     # ---------- anında eşitleme (Supabase Realtime) ----------
     # Sunucu başka bir cihazın yaptığı değişikliği bildirir; bildirimin içeriği kullanılmaz, yalnızca
-    # eşitleme hemen başlatılır (değişiklikleri her zamanki _pull getirir). Bağlantı yoksa 30 sn'lik
-    # yoklama zaten çalışıyor, yani Realtime yalnızca hızlandırır.
+    # eşitleme hemen başlatılır (değişiklikleri her zamanki _pull getirir). Bağlantı yoksa başka cihazdaki
+    # değişiklik bir sonraki açılışta ya da "Şimdi eşitle" ile gelir.
 
     def _realtime_loop(self):
         try:
@@ -353,6 +375,7 @@ class Cloud:
             if not self.state.get("refresh_token") or not self.auto:
                 time.sleep(3)
                 continue
+            started = time.time()
             try:
                 self._realtime_session(websocket)
                 delay = 2
@@ -361,7 +384,7 @@ class Cloud:
                 delay = REALTIME_OFF_RETRY
             except Exception as error:  # ağ kesintisi, sunucu kapattı...
                 _log_error("WS", "/realtime", error)
-                delay = min(delay * 2, 120)
+                delay = 2 if time.time() - started > 60 else min(delay * 2, 60)  # uzun süren bağlantı koptuysa hemen dene
             finally:
                 if self.realtime:
                     self.realtime = False
@@ -447,8 +470,9 @@ class Cloud:
             self._push_timer.start()
 
     def _loop(self):
+        self._wake.set()  # açılışta bir kez eşitle
         while True:
-            self._wake.wait(POLL_SECONDS)
+            self._wake.wait()
             self._wake.clear()
             manual, self._manual = self._manual, False
             if not self.state.get("refresh_token") or not (self.auto or manual):
@@ -499,6 +523,7 @@ class Cloud:
                 stamps = {i: round(lib.added_at("album:" + album_id, i)) for i in ids if lib.added_at("album:" + album_id, i)}
                 if stamps:
                     doc["added"] = stamps
+                doc["cover"] = lib.cover_document(album_id)  # hep var (None: kapak yok); yoksa gönderen eski sürüm
                 docs["album:" + album_id] = doc
             for folder_id, folder in data["folders"].items():
                 docs["folder:" + folder_id] = {"name": folder["name"], "created": folder.get("created")}
@@ -558,9 +583,10 @@ class Cloud:
                 if known.get(key) == _digest(value):
                     continue  # zaten bizde olan (çoğunlukla bizim gönderdiğimiz) hâl
                 mine = local.get(key)
-                if (not merge and isinstance(value, dict) and "added" not in value and mine is not None
-                        and _digest(_without_added(mine)) == _digest(value)):
-                    # Eklenme zamanını bilmeyen eski bir sürüm aynı kaydı geri yazdı: bizdeki zaman kalsın,
+                if (not merge and isinstance(value, dict) and isinstance(mine, dict)
+                        and any(f in mine and f not in value for f in NEW_FIELDS)
+                        and _digest(_without_new(mine, value)) == _digest(value)):
+                    # Eklenme zamanını / kapağı bilmeyen eski bir sürüm aynı kaydı geri yazdı: bizdeki kalsın,
                     # yeniden gönderilmesin (yoksa iki cihaz kaydı sonsuza dek birbirine geri yazar)
                     known[key] = _digest(mine)
                     continue
@@ -573,10 +599,15 @@ class Cloud:
                 elif not merge:
                     known[key] = _digest(value)
         # İmleç: son satırın zamanından 5 sn geri (aynı anda yazılıp geç görünen satırlar kaçmasın);
-        # tekrar gelen satırlar özet karşılaştırmasıyla atlanır
-        last = _parse_time(rows[-1]["updated_at"]) - timedelta(seconds=5)
+        # tekrar gelen satırlar özet karşılaştırmasıyla atlanır. Bu pencere bir kez yeniden okunup içinde yeni bir
+        # şey çıkmazsa imleç son satırın tam zamanına ilerler: yoksa toplu bir yazmadan sonra (ilk yükleme gibi)
+        # o 5 saniyedeki satırlar her yoklamada yeniden inerdi (2026-11'de Supabase veri kotasını bu aştı).
+        newest = _parse_time(rows[-1]["updated_at"])
+        last = newest - timedelta(seconds=5)
         if not cursor or last > _parse_time(cursor):
             self.state["cursor"] = last.isoformat()
+        elif not changes and newest > _parse_time(cursor):
+            self.state["cursor"] = newest.isoformat()
         self._save_state()
 
     def _apply(self, changes, merge):
@@ -609,8 +640,12 @@ class Cloud:
             self._applying = False
 
 
-def _without_added(doc):
-    return {k: v for k, v in doc.items() if k != "added"}
+NEW_FIELDS = ("added", "cover")  # eski sürümlerin bilmediği alanlar: onlardan gelen kayıtta hiç bulunmaz
+
+
+def _without_new(mine, theirs):
+    """Bizim kaydımızdan, gelen kayıtta olmayan yeni alanlar çıkarılır (eski sürüm yankısını tanımak için)."""
+    return {k: v for k, v in mine.items() if not (k in NEW_FIELDS and k not in theirs)}
 
 
 class _Unauthorized(CloudError):
@@ -622,10 +657,19 @@ class _RealtimeOff(CloudError):
 
 
 def _parse_time(text):
+    """Sunucu zamanı → saat dilimsiz UTC. Hep aynı biçim: kesirli saniyesi olan ve olmayan zamanlar (Postgres tam
+    saniyede kesri yazmıyor) karşılaştırılabilsin, kayıtlı eski imleçler (dilimsiz UTC) de geçerli kalsın."""
     text = text.replace("Z", "+00:00")
     if "." in text:  # Python 3.10 öncesi kesirli saniyede 6 basamak ister
         head, _, rest = text.partition(".")
-        digits = "".join(ch for ch in rest if ch.isdigit())
+        digits = ""
+        for ch in rest:
+            if not ch.isdigit():
+                break
+            digits += ch
         zone = rest[len(digits):]
         text = f"{head}.{digits[:6].ljust(6, '0')}{zone}"
-    return datetime.fromisoformat(text)
+    moment = datetime.fromisoformat(text)
+    if moment.tzinfo is not None:
+        moment = moment.astimezone(timezone.utc).replace(tzinfo=None)
+    return moment

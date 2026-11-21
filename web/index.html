@@ -38,6 +38,8 @@
         <input id="searchInput" placeholder="Ne dinlemek istiyorsun?" spellcheck="false" autocomplete="off">
         <button class="clear hidden" id="searchClear" title="Temizle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
       </label><div id="searchDrop" class="hidden"></div></div>
+      <div class="reqwrap hidden" id="reqWrap"><button class="hist" id="reqBtn" title="Arkadaşlık istekleri"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="10" cy="8" r="4"/><path d="M3 21c1-4.5 3.5-7 7-7 1.6 0 3 .5 4.1 1.5M19 14v6M16 17h6"/></svg></button>
+        <div id="reqDrop" class="hidden"></div></div>
     </div>
     <div id="scroll"><div id="glow"></div><div id="page"></div></div>
   </main>
@@ -59,6 +61,7 @@
     <div class="right">
       <button class="ib" id="deviceBtn" title="Çalınacak cihaz"></button>
       <button class="ib" id="listenBtn" title="Ortak dinleme"></button>
+      <button class="ib sleep-btn" id="sleepBtn" title="Uyku zamanlayıcısı"></button>
       <button class="ib" id="panelBtn" title="Şimdi çalıyor paneli"></button>
       <button class="ib" id="muteBtn" title="Sesi kapat"></button>
       <input type="range" id="volume" min="0" max="100" value="70">

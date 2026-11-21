@@ -2,6 +2,8 @@
 
 <p align="center">YouTube ve YouTube Music üzerinden çalışan, Spotify tarzı masaüstü müzik uygulaması.</p>
 
+<p align="center"><b><a href="CHANGELOG.md">📋 Güncellemelerde neler var?</a></b></p>
+
 ## İndir ve kur
 
 ### [⬇ SOUNDsetup.exe'yi indir](https://github.com/Sefikak/SOUND/raw/main/SOUNDsetup.exe)
@@ -32,7 +34,7 @@ Kaldırmak için: `bash ~/.local/share/sound/linux/uninstall.sh`
 
 ## Mobil sürüm (Android)
 
-### [⬇ SOUND-android-0.1.11.apk'yı indir](https://github.com/Sefikak/SOUND/raw/android-0.1.11/SOUND-android-0.1.11.apk)
+### [⬇ SOUND-android-0.1.12.apk'yı indir](https://github.com/Sefikak/SOUND/raw/android-0.1.12/SOUND-android-0.1.12.apk)
 
 **Erken deneme sürümü:** Sorun çıkabilir. 32 ve 64 bit telefonlarda kurulabilir.
 

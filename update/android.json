@@ -1,11 +1,13 @@
 {
-  "versionCode": 12,
-  "versionName": "0.1.11",
-  "sha256": "ae1a0bd1973191cd6f04f2c960f207080a2b414960527af42137cf8715b07345",
-  "url": "https://github.com/Sefikak/SOUND/raw/android-0.1.11/SOUND-android-0.1.11.apk",
+  "versionCode": 13,
+  "versionName": "0.1.12",
+  "sha256": "dc3be164580500cf7d37ffa21f52ae114eee50a2729c395219329814776fd752",
+  "url": "https://github.com/Sefikak/SOUND/raw/android-0.1.12/SOUND-android-0.1.12.apk",
   "notes": [
-    "Yeni alt çubuk: Ana sayfa, Kitaplık, Profil",
-    "Arama çubuğu ana sayfanın üstünde",
-    "Ayarlar artık Profil sayfasının içinde"
+    "Albüm kapağını değiştir: şarkılardan seç ya da resim yükle",
+    "Sözler artık çalan satırı doğru takip ediyor",
+    "Gruplar, Birlikte dinle daveti, arkadaşlık istekleri düğmesi",
+    "Uyku zamanlayıcısı, bildirimler, Sanatçı Mix'te Popülerler",
+    "Eşitleme artık sürekli internet kullanmıyor"
   ]
 }

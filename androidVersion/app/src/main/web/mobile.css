@@ -324,8 +324,10 @@ html.mobile #side .brand img, html.mobile #side .brand .logo-tint { height: 28px
 /* çalınacak cihaz */
 html.mobile #dvChip { right: 10px; max-width: calc(100vw - 20px); }
 html.mobile #app.panel-open #dvChip { display: none; }
-.m-device { order: 3; display: grid; place-items: center; width: 36px; height: 36px; color: #fff; }
-.m-device svg { width: 22px; height: 22px; }
+.m-pbtns { order: 3; display: flex; align-items: center; margin-right: -8px; }
+.m-pbtns button { display: grid; place-items: center; width: 34px; height: 36px; color: #fff; }
+.m-pbtns button.on { color: var(--accent-light); }
+.m-pbtns svg { width: 21px; height: 21px; }
 
 /* profil ve mesajlar */
 html.mobile #nav a[data-page="social"], html.mobile #accountBtn { display: none; }
@@ -340,3 +342,17 @@ html.mobile .sc-page h1 { font-size: 24px; }
 html.mobile .sc-chat { height: calc(100dvh - 190px); max-height: none; min-height: 300px; }
 html.mobile .sc-row .pill { height: 32px; padding: 0 12px; font-size: 12.5px; }
 html.mobile .sc-input { font-size: 16px; }
+
+/* tam ekran: kapak ve başlık denetimlerin hemen üstünde; boşluk başlığın altında değil üst çubuğun altında kalır */
+html.mobile #panel .p-head { gap: 4px; }
+html.mobile #panel .p-head .grow { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#mNow .p-media { margin-top: auto; }
+#mNow .center { margin-bottom: auto; }  /* kapak, başlık ve denetimler üst çubuk ile alt kenar arasında ortada */
+#mNow .center { margin-top: 0; padding-top: 0; }
+#mNow .prog { height: 64px; }
+html.mobile #panel .p-title { margin: 22px 0 0; }
+html.mobile #panel .p-title .rb { width: 38px; }
+
+/* sözler: kutu ekrana göre büyür; çalan satır ortada kalsın diye yeterli yükseklik */
+html.mobile .lyrics .lines { max-height: min(52vh, 460px); }
+html.mobile .lyrics .lines p { font-size: 19px; padding: 6px 0; }

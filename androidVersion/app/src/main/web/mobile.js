@@ -125,8 +125,8 @@
       { title: "Favoriler", art: tile("fav", 56, I.heart, "#6d4ae0", 0), page: "favorites", src: "favorites" },
       { title: "İndirilenler", art: tile("dl", 56, stroke('<path d="M12 4v11m-5-5 5 5 5-5M5 20h14"/>', 2.4), "#0f766e", 0), page: "downloads", src: "downloads" },
       ...Object.entries(S.lib.albums).sort((a, b) => b[1].created - a[1].created).slice(0, 6).map(([id, a]) => {
-        const first = L.albumTracks(id)[0];
-        return { title: a.name, art: first ? `<img src="${thumb(first)}">` : tile(id, 56, I.note, null, 0), page: "album", ref: id, src: `album:${id}` };
+        const cover = albumCover(id);
+        return { title: a.name, art: cover ? `<img src="${cover}">` : tile(id, 56, I.note, null, 0), page: "album", ref: id, src: `album:${id}` };
       }),
     ];
     let html = `<div class="pad home-page"><div class="m-head"><h1>${greeting()}</h1>
@@ -174,6 +174,7 @@
   $("#bar").appendChild(line);
   /* ortak dinleme: odadayken küçük çaların üstünde kod ve kişi sayısı, dokununca oda açılır */
   ACT.openListen = () => openListen();
+  ACT.mQueue = () => { const q = $("#pQueue"), inner = $("#panelInner"); if (q && inner) inner.scrollTo({ top: q.offsetTop - 12, behavior: "smooth" }); };
   const listenChip = document.createElement("button");
   listenChip.id = "mListen";
   listenChip.onclick = e => { e.stopPropagation(); openListen(); };
@@ -181,7 +182,7 @@
   const drawListenChip = () => {
     listenChip.classList.toggle("show", !!LT.room && !S.panelOpen);
     if (LT.room) listenChip.innerHTML = `${I.listen}${esc(LT.room)} · ${LT.members.length}`;
-    $('[data-act="openListen"]')?.classList.toggle("on", !!LT.room);
+    $$('[data-act="openListen"]').forEach(b => b.classList.toggle("on", !!LT.room));
   };
   document.addEventListener("listenchange", drawListenChip);
   /* okunmamış mesaj ve arkadaşlık isteği: alt çubuktaki Profil sekmesinde sayı */
@@ -284,9 +285,15 @@
     now.id = "mNow";
     inner.insertBefore(now, inner.firstChild);
     now.append($(".p-head", inner), media, $("#pTitle"), center);
-    const pick = document.createElement("button");  // tam ekran çalarda çalınacak cihaz
-    pick.className = "m-device"; pick.dataset.act = "openDevices"; pick.title = "Çalınacak cihaz"; pick.innerHTML = I.devices;
-    $(".p-head", now).appendChild(pick);
+    // tam ekran çaların üstünde: çalınacak cihaz, ortak dinleme, sıradakiler (aşağıdaki listeye kaydırır)
+    const btns = document.createElement("div");
+    btns.className = "m-pbtns";
+    btns.innerHTML = `<button data-act="openDevices" class="${dvRemote() ? "on" : ""}" title="Çalınacak cihaz">${I.devices}</button>
+      <button data-act="openListen" class="${LT.room ? "on" : ""}" title="Ortak dinleme">${I.listen}</button>
+      <button data-act="sleep" class="sleep-btn" title="Uyku zamanlayıcısı">${I.moon}</button>
+      <button data-act="mQueue" title="Sıradakiler">${I.queue}</button>`;
+    sleepDraw();
+    $(".p-head", now).appendChild(btns);
   };
 
   let touch = null;
@@ -329,8 +336,9 @@
       cover.classList.add("m-anim");
       cover.style.transform = ""; cover.style.opacity = "";
       setTimeout(() => cover.classList.remove("m-anim"), 210);
-      if (dx > THRESHOLD) P.next();
-      else if (dx < -THRESHOLD) previousSong();
+      // kapak sayfa gibi çevrilir: sola itince sonraki, sağa çekince önceki şarkı
+      if (dx < -THRESHOLD) P.next();
+      else if (dx > THRESHOLD) previousSong();
     } else if (mode === "swipe") {
       np.classList.add("m-anim");
       np.style.transform = ""; np.style.opacity = "";
@@ -352,6 +360,45 @@
       touch = null; moveFull(0); np.style.transform = ""; np.style.opacity = "";
     });
   }
+
+  /* şarkı satırını sağa kaydırınca kuyruğa eklenir (Spotify gibi): satır kayarken arkasında vurgu rengi açılır */
+  const QUEUE_AT = 90;
+  let rowTouch = null;
+  const scroller = $("#scroll");
+  scroller.addEventListener("touchstart", e => {
+    const row = e.touches.length === 1 && e.target.closest(".row[data-list]");
+    rowTouch = row ? { row, x: e.touches[0].clientX, y: e.touches[0].clientY, mode: null, dx: 0 } : null;
+  }, { passive: true });
+  scroller.addEventListener("touchmove", e => {
+    if (!rowTouch) return;
+    const dx = e.touches[0].clientX - rowTouch.x, dy = e.touches[0].clientY - rowTouch.y;
+    if (!rowTouch.mode) {
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+      rowTouch.mode = dx > 0 && Math.abs(dx) > Math.abs(dy) * 1.4 ? "queue" : "none";
+    }
+    if (rowTouch.mode !== "queue") return;
+    e.preventDefault();
+    const shift = Math.max(0, Math.min(dx, 140)), r = rowTouch.row;
+    rowTouch.dx = dx;
+    r.style.transition = "none";
+    r.style.transform = `translateX(${shift}px)`;
+    r.style.boxShadow = `-${shift}px 0 0 0 ${dx > QUEUE_AT ? "var(--accent)" : "#ffffff26"}`;
+  }, { passive: false });
+  const rowEnd = () => {
+    if (!rowTouch) return;
+    const { row, mode, dx } = rowTouch;
+    rowTouch = null;
+    if (mode !== "queue") return;
+    suppressClick = true;
+    setTimeout(() => { suppressClick = false; }, 350);
+    row.style.transition = "transform .18s ease-out, box-shadow .18s ease-out";
+    row.style.transform = ""; row.style.boxShadow = "";
+    setTimeout(() => { row.style.transition = ""; }, 200);
+    const t = dx > QUEUE_AT && itemTrack(row);
+    if (t) { P.enqueue(t); navigator.vibrate?.(20); }
+  };
+  scroller.addEventListener("touchend", rowEnd);
+  scroller.addEventListener("touchcancel", rowEnd);
 
   /* ses telefonun kendi tuşlarıyla ayarlanır: uygulama içi kaydırıcı tam açık kalır */
   const setVol = setVolume;

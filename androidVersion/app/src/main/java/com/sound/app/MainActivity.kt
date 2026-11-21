@@ -205,6 +205,19 @@ class MainActivity : ComponentActivity() {
         web.evaluateJavascript("window.soundSave && soundSave()", null)
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        openTarget(intent)
+    }
+
+    /** Bildirimden gelindi: arayüz hazır olunca sohbet / davet açılır. */
+    private fun openTarget(intent: Intent?) {
+        val target = intent?.getStringExtra(SocialNotifier.EXTRA_TARGET) ?: return
+        intent.removeExtra(SocialNotifier.EXTRA_TARGET)
+        apiPool.execute { runCatching { backend.callAttr("open_target", target) } }
+    }
+
     override fun onResume() {
         super.onResume()
         pendingApk?.let { apk ->
@@ -350,6 +363,11 @@ class MainActivity : ComponentActivity() {
         }
 
         fun pickFiles(multiple: Boolean): String = this@MainActivity.pickFiles(multiple)
+
+        /** Yeni mesaj, arkadaşlık isteği, ortak dinleme daveti. Dokununca uygulama açılır ve hedef gösterilir. */
+        fun notify(title: String, body: String, target: String) {
+            runOnUiThread { SocialNotifier.show(this@MainActivity, title, body, target) }
+        }
 
         fun playerState(json: String) {
             runOnUiThread {

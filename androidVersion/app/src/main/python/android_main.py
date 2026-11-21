@@ -257,6 +257,8 @@ def start(data_dir, native):
         original(state)
         native.playerState(json.dumps(state, ensure_ascii=False))
     _backend.player_state = player_state
+    # sistem bildirimi: masaüstündeki tepsi baloncuğu yerine Android bildirimi (MainActivity.Native.notify)
+    _backend.notify = lambda title, body, target="": native.notify(str(title)[:60], str(body)[:250], str(target)[:80]) or True
     # yt_dlp arayüz açılırken arka planda yüklenir; ilk arama/çalma onu beklemesin diye hemen başlıyor
     threading.Thread(target=updater.warm, daemon=True, name="ytdlp-warm").start()
     threading.Timer(30, updater.verify).start()
@@ -272,6 +274,12 @@ def call(method, args_json):
     except Exception as error:
         traceback.print_exc(file=sys.stderr)
         return json.dumps({"error": str(error)}, ensure_ascii=False)
+
+
+def open_target(target):
+    """Bildirime dokunuldu: arayüz ilgili sohbeti / daveti açar."""
+    if _backend:
+        _backend.push("open_target", target)
 
 
 def command(action):

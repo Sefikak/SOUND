@@ -4071,6 +4071,9 @@ window.SOUND = {
         ({ toggle: () => P.toggle(), play: () => !P.isPlaying() && P.toggle(), pause: () => P.isPlaying() && P.toggle(),
            next: () => P.next(), previous: () => P.previous(), shuffle: () => P.toggleShuffle(), repeat: () => P.cycleRepeat() })[d]?.();
         break;
+      case "volume":  // tepsi menüsündeki ses kaydırıcısı
+        if (typeof d === "number") { muted = null; setVolume(Math.max(0, Math.min(1, d))); }
+        break;
     }
   },
 };

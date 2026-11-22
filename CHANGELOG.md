@@ -4,6 +4,11 @@ Her güncellemede yenilikler en üste eklenir; eskiler aşağıda durur. Bilgisa
 
 ---
 
+## 22 Kasım 2026 · masaüstü (Windows)
+
+### Yeni
+- **Tepsi menüsünde ses ayarı:** görev çubuğundaki SOUND simgesine sağ tıklayınca açılan menüde artık ses kaydırıcısı var. Sesi değiştirmek için uygulamayı açman gerekmiyor; simgeye basıp sesi kapatıp açabilir, fare tekerleğiyle de ayarlayabilirsin.
+
 ## 22 Kasım 2026 · masaüstü (Linux)
 
 ### Düzeltmeler

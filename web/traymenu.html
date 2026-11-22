@@ -43,6 +43,20 @@
   body.playing .pp .pause { display: block; }
   body.empty .ctrl .ib { opacity: .35; pointer-events: none; }
 
+  .vol { display: flex; align-items: center; gap: 8px; padding: 0 6px 8px 2px; }
+  .vol .ib { width: 30px; height: 30px; flex: none; }
+  .vol .ib svg { width: 17px; height: 17px; }
+  .vol .ib .x, .vol.mute .ib .w1, .vol.mute .ib .w2, .vol.low .ib .w2 { display: none; }
+  .vol.mute .ib .x { display: block; }
+  .vol input { flex: 1; min-width: 0; height: 18px; margin: 0; background: none; cursor: pointer; -webkit-appearance: none; appearance: none; --v: 70%; }
+  .vol input::-webkit-slider-runnable-track { height: 4px; border-radius: 2px;
+    background: linear-gradient(to right, var(--accent-light) var(--v), #ffffff26 var(--v)); }
+  .vol input:hover::-webkit-slider-runnable-track { background: linear-gradient(to right, var(--accent) var(--v), #ffffff33 var(--v)); }
+  .vol input::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -4px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 4px #0008; opacity: 0; transition: opacity .12s; }
+  .vol:hover input::-webkit-slider-thumb, .vol input:active::-webkit-slider-thumb { opacity: 1; }
+  .vol .pct { width: 34px; flex: none; text-align: right; color: var(--sub); font-size: 12px; font-variant-numeric: tabular-nums; }
+
   .sep { height: 1px; background: #ffffff12; margin: 4px 2px; }
   .item { display: flex; align-items: center; gap: 11px; width: 100%; padding: 8px 10px; border-radius: calc(var(--radius) * .7); text-align: left; }
   .item:hover { background: var(--hover); }
@@ -66,6 +80,11 @@
       <svg class="pause" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4.5v16H6zM13.5 4H18v16h-4.5z"/></svg>
     </button>
     <button class="ib" data-cmd="next" title="Sonraki"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l10.5-7z"/></svg></button>
+  </div>
+  <div class="vol" id="vol">
+    <button class="ib" id="mute" title="Sesi kapat / aç"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z" fill="currentColor"/><path class="w1" d="M15.5 9.5a3.5 3.5 0 0 1 0 5"/><path class="w2" d="M18.5 6.5a8 8 0 0 1 0 11"/><path class="x" d="m16 9.5 5 5m0-5-5 5"/></svg></button>
+    <input type="range" id="volume" min="0" max="100" step="1" value="70" title="Ses düzeyi">
+    <span class="pct" id="pct">70%</span>
   </div>
   <div class="sep"></div>
   <button class="item open" data-act="open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18"/></svg>SOUND'u aç</button>
@@ -101,6 +120,7 @@ function theme(ui) {
 function render(state) {
   state = state || {};
   theme(state.ui);
+  if (typeof state.volume === "number" && !volDragging) { muted = null; showVolume(state.volume); }
   const track = state.track;
   document.body.classList.toggle("empty", !track);
   document.body.classList.toggle("playing", !!(track && state.playing));
@@ -116,9 +136,42 @@ function render(state) {
   }
 }
 
+/* ses düzeyi: konum (0-1) uygulamadaki kaydırıcıyla aynı; gerçek kazancı (küp eğrisi, en yüksek ses sınırı) uygulama hesaplar */
+const volEl = document.getElementById("volume");
+let volPos = 0.7, muted = null, volDragging = false, volSent = 0, volTimer = null;
+function showVolume(v) {
+  volPos = Math.max(0, Math.min(1, v));
+  const p = Math.round(volPos * 100);
+  volEl.value = p;
+  volEl.style.setProperty("--v", p + "%");
+  document.getElementById("pct").textContent = p + "%";
+  const box = document.getElementById("vol");
+  box.classList.toggle("mute", p === 0);
+  box.classList.toggle("low", p > 0 && p < 50);
+}
+function setVolume(v) {  // sürüklerken saniyede ~20 kez gönder, son değer mutlaka gitsin
+  showVolume(v);
+  clearTimeout(volTimer);
+  const send = () => { volSent = Date.now(); if (api()) api().volume(volPos); };
+  if (Date.now() - volSent > 50) send(); else volTimer = setTimeout(send, 50);
+}
+volEl.addEventListener("input", () => { muted = null; setVolume(volEl.value / 100); });
+volEl.addEventListener("pointerdown", () => { volDragging = true; });
+window.addEventListener("pointerup", () => { volDragging = false; });
+document.getElementById("vol").addEventListener("wheel", e => {  // tekerlek: çentik başına %5
+  e.preventDefault();
+  muted = null;
+  setVolume(Math.round((volPos + (e.deltaY < 0 ? 0.05 : -0.05)) * 100) / 100);
+}, { passive: false });
+document.getElementById("mute").addEventListener("click", e => {
+  e.stopPropagation();
+  if (muted == null) { muted = volPos || 0.7; setVolume(0); }
+  else { setVolume(muted); muted = null; }
+});
+
 document.addEventListener("click", e => {
   const b = e.target.closest("button");
-  if (!b || !api()) return;
+  if (!b || !api() || b.id === "mute") return;
   if (b.dataset.cmd) {
     api().command(b.dataset.cmd);
     if (b.dataset.cmd === "toggle") document.body.classList.toggle("playing");  // anında tepki; asıl durum sonra gelir

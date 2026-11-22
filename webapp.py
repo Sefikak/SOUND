@@ -1506,7 +1506,7 @@ class TrayMenu:
     her açılışta çalan şarkı ve kullanıcının renkleriyle (settings.ui) yeniden çizilir; dışarı tıklanınca gizlenir.
     Linux'ta ve kurulamazsa pystray'in sistem menüsü kullanılır."""
     TITLE = "SOUND menü"
-    WIDTH, HEIGHT = 280, 246  # mantıksal piksel (traymenu.html içeriğine göre)
+    WIDTH, HEIGHT = 280, 284  # mantıksal piksel (traymenu.html içeriğine göre)
 
     def __init__(self, backend, base):
         self.backend = backend
@@ -1563,7 +1563,8 @@ class TrayMenu:
         if track:
             info = {"title": track.get("title") or "", "artist": track.get("artist") or "",
                     "art": f"{self.base}/thumb/{track['id']}" if track.get("id") else ""}
-        return {"track": info, "playing": bool(now.get("playing")), "ui": b.lib.settings.get("ui") or {}}
+        return {"track": info, "playing": bool(now.get("playing")), "ui": b.lib.settings.get("ui") or {},
+                "volume": b.lib.volume}
 
     def show(self):
         """Sağ tık (tepsi iş parçacığı). Pencere henüz hazır değilse False: sistem menüsü açılır."""
@@ -1654,6 +1655,14 @@ class TrayMenuApi:
             self._menu.backend.push("command", action)
         if action != "toggle":
             self._menu.hide()
+
+    def volume(self, value):
+        """Menüdeki ses kaydırıcısı (0-1, uygulamadaki kaydırıcı konumu). Uygulama sesi ayarlar ve kaydeder."""
+        try:
+            value = max(0.0, min(1.0, float(value)))
+        except (TypeError, ValueError):
+            return
+        self._menu.backend.push("volume", round(value, 3))
 
     def open(self):
         self._menu.hide()

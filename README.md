@@ -34,7 +34,7 @@ Kaldırmak için: `bash ~/.local/share/sound/linux/uninstall.sh`
 
 ## Mobil sürüm (Android)
 
-### [⬇ SOUND-android-0.1.12.apk'yı indir](https://github.com/Sefikak/SOUND/raw/android-0.1.12/SOUND-android-0.1.12.apk)
+### [⬇ SOUND-android-0.1.13.apk'yı indir](https://github.com/Sefikak/SOUND/raw/android-0.1.13/SOUND-android-0.1.13.apk)
 
 **Erken deneme sürümü:** Sorun çıkabilir. 32 ve 64 bit telefonlarda kurulabilir.
 
@@ -44,6 +44,18 @@ Kaldırmak için: `bash ~/.local/share/sound/linux/uninstall.sh`
 0.1.3'ten itibaren uygulama kendini günceller: yeni sürümü Wi-Fi'da indirir, yüklemek için onayını ister. Kaynak kodu [`mobile` dalında](https://github.com/Sefikak/SOUND/tree/mobile).
 
 Henüz yok: video indirme, YouTube Music'ten ve Spotify dosyasından içe aktarma, yaş doğrulamalı şarkılar.
+
+## Galaxy Watch / Wear OS
+
+### [⬇ SOUND-watch-1.0.apk'yı indir](https://github.com/Sefikak/SOUND/raw/wear-1.0/SOUND-watch-1.0.apk)
+
+Saatten telefondaki SOUND'u kumanda edersin: çalan şarkı ve kapak, çal/duraklat, önceki/sonraki, beğen, döner çerçeveyle ses, kitaplıktan (favoriler, mixler, albümler, son çalınanlar) şarkı başlatma ve kaydırınca açılan kart. Telefonda **SOUND 0.1.13 veya üstü** kurulu olmalı; saat telefon olmadan müzik çalmaz.
+
+Saate kurmak (Play Store'da olmadığı için elle):
+1. Saatte **Ayarlar › Telefon hakkında › Yazılım bilgisi**'nde *Yazılım sürümü*ne 5 kez dokun (Geliştirici seçenekleri açılır).
+2. **Ayarlar › Geliştirici seçenekleri**'nde *ADB hata ayıklama* ve *Kablosuz hata ayıklama*yı aç.
+3. Telefona **Bugjaeger** ya da **Wear Installer 2** gibi bir uygulama kur, saatte *Cihazı eşleme kodu ile eşle*'deki kod ve adresle eşleştir, APK'yı seçip saate yükle.
+   Bilgisayardan: `adb pair <adres:port> <kod>` → `adb connect <adres:port>` → `adb install SOUND-watch-1.0.apk`
 
 ## Özellikler
 

@@ -4,6 +4,25 @@ Her güncellemede yenilikler en üste eklenir; eskiler aşağıda durur. Bilgisa
 
 ---
 
+## 26 Kasım 2026 · Android 0.1.13 + masaüstü + Galaxy Watch 1.0
+
+### Yeni
+- **Akıllı sıra:** aramadan ya da ana sayfadan bir şarkı çalınca, ardından arama sonuçları değil o şarkıya benzeyen şarkılar gelir. Sıra; YouTube Music radyosu, YouTube Mix'i ve benzer şarkıların radyoları birleştirilerek kurulur, senin dinleme alışkanlıklarına (bitirdiklerin, atladıkların, sevdiklerin) göre sıralanır, aynı sanatçı üst üste gelmez. Atladığın şarkılar sıradakileri anında etkiler.
+- **Yavaş geçiş:** sıradaki şarkılar enerjiye göre dizilir; sakin bir şarkıdan sonra birden çok hareketli bir şarkıya atlamaz.
+- **Beğenmedim (👎):** çalan şarkıda, sıradakilerde ve menüde. O şarkı bir daha otomatik sıraya ve mixlere girmez, benzerleri de geri plana düşer. Ayarlar › Çalma'dan geri alınır.
+- **Senin için mixler:** Günlük Mix 1-4 (dinlediklerinden türlere göre), Haftalık Keşif (hiç dinlemediğin şarkılar), Yeni Çıkanlar (dinlediğin sanatçılardan), Tekrar Tekrar ve Unutulan Favoriler. Her gün/hafta kendiliğinden yenilenir, albüm olarak kaydedilebilir.
+- **Albümde "Otomatik ekle":** albüme birkaç şarkı ekledikten sonra bu düğme albüme uyan 5, 10 ya da 20 şarkı ekler (geri alınabilir).
+- **Ses çıkışı seçimi:** cihaz penceresinde hangi çıkıştan (hoparlör, kulaklık, Bluetooth) çaldığı görünür, buradan değiştirilir. Bilgisayarda tepsi menüsünden ve Ctrl+Shift+O ile; telefonda tam ekran çalarda bağlı cihaz adı yazar, dokununca çıkış seçici açılır.
+- **Telefonda kulaklık:** uygulama kapalıyken bile kulaklığın çal düğmesine basınca ya da Bluetooth kulaklık bağlanınca SOUND kaldığı yerden çalar (Ayarlar'dan açılıp kapatılır). Kulaklık çıkınca müzik durur.
+- **Galaxy Watch uygulaması:** saatten çalan şarkı ve kapak, çal/duraklat, önceki/sonraki, beğen, döner çerçeveyle ses, saatten favorileri/mixleri/albümleri başlatma ve kaydırınca açılan SOUND kartı. Kurulumu README'de.
+- **Açık temalar:** Kişiselleştir'de Açık, Kâğıt ve Renkli açık arka planlar.
+- **Tema eşitleme:** telefonda değiştirdiğin tema bilgisayarda da değişir, tersi de (SOUND hesabıyla; Ayarlar'dan kapatılabilir).
+- **Yeni Ayarlar:** Çalma, Görünüm, Sosyal, Kitaplık, Hesaplar ve Uygulama alt sayfalarına bölündü.
+- **Bilgisayarda Windows ses karıştırıcısında** artık "Microsoft Edge WebView2" yerine SOUND adı ve simgesi görünür.
+
+### Düzeltmeler
+- Vurgu rengi beyaz (ya da çok açık) seçilince menüdeki yazıların ve düğmelerin kaybolması düzeldi; renk ne olursa olsun yazı okunur kalır.
+
 ## 22 Kasım 2026 · masaüstü (Windows)
 
 ### Yeni

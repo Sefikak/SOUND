@@ -126,6 +126,7 @@ class Cloud:
         self.lib = library
         self.url, self.key = load_config()
         self.on_status = on_status or (lambda status: None)
+        self.on_theme = None  # başka cihazdan tema geldi: arayüze bildirilir (webapp)
         self._lock = threading.RLock()
         self._wake = threading.Event()
         self._push_timer = None
@@ -527,6 +528,11 @@ class Cloud:
                 docs["album:" + album_id] = doc
             for folder_id, folder in data["folders"].items():
                 docs["folder:" + folder_id] = {"name": folder["name"], "created": folder.get("created")}
+            # tema: yalnızca renkler (yerleşim, boyut gibi cihaza özgü ayarlar eşitlenmez); ayar kapalıysa gönderilmez
+            settings = data.get("settings") or {}
+            ui = settings.get("ui") or {}
+            if settings.get("theme_sync", True) is not False and ui:
+                docs["theme:ui"] = {k: ui[k] for k in THEME_KEYS if k in ui}
         return docs
 
     def _push(self):
@@ -633,6 +639,13 @@ class Cloud:
                             added[("album:" + item, track_id)] = stamps.get(track_id) or 0
             elif kind == "folder":
                 folders[item] = value
+            elif kind == "theme" and item == "ui" and isinstance(value, dict) and not merge:
+                theme = {k: value[k] for k in THEME_KEYS if k in value}
+                settings = self.lib.settings
+                if theme and settings.get("theme_sync", True) is not False:
+                    self.lib.update_settings({"ui": {**(settings.get("ui") or {}), **theme}})
+                    if self.on_theme:
+                        self.on_theme(theme)
         self._applying = True
         try:
             self.lib.apply_cloud(fav_add, fav_del, order, albums, folders, merge=merge, added=added)
@@ -640,6 +653,7 @@ class Cloud:
             self._applying = False
 
 
+THEME_KEYS = ("accent", "bg", "flame", "glow", "radius", "calm")  # eşitlenen görünüm ayarları
 NEW_FIELDS = ("added", "cover")  # eski sürümlerin bilmediği alanlar: onlardan gelen kayıtta hiç bulunmaz
 
 

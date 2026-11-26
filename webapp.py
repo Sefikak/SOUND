@@ -47,7 +47,8 @@ else:
     wintaskbar = None  # görev çubuğu düğmeleri yalnızca Windows'ta
 from library import DATA_DIR, Library
 import importer
-from recommender import build_home, mix_for
+from recommender import (MIX_COLORS, Taste, album_suggestions, build_home, daily_mixes, discover_weekly, main_artist, mix_for,
+                         release_radar, smart_queue)
 from searcher import (_norm, artist_page, artist_radio, clean_channel, find_artist, playlist_tracks, release_songs,
                       remove_duplicates, search_albums,
                       search_artists, search_playlists, search_songs, search_tracks)
@@ -309,6 +310,7 @@ class Backend:
         self.radios = {}
         self.track_info = {}
         self.home_loading = False
+        self.mixes_loading = False
         self.home_error = None
         self.thumbbar = None
         self.media = None
@@ -320,6 +322,7 @@ class Backend:
         self.geometry = _sane_geometry(self.session.get("window"))
         self.lib.subscribe(lambda: self.push("library", self.snapshot()))
         self.cloud = cloud.Cloud(self.lib, lambda status: self.push("cloud", status))
+        self.cloud.on_theme = lambda theme: self.push("theme", theme)
         self.cloud_login = None  # Google girişinin dönüşünü bekleyen yerel sunucu
         self.listen = listen.Listen(lambda event: self.push("listen", event))
         self.devices = devices.Devices(self.cloud, lambda event: self.push("devices", event))
@@ -414,6 +417,13 @@ class Backend:
         self.ensure_on_screen()
         self.set_app_icon((self.lib.settings.get("ui") or {}).get("accent"))
         self.win.submit(self._setup_windows_controls)
+        # Ses karıştırıcısında "Microsoft Edge WebView2" değil "SOUND" yazsın (ses WebView2'nin alt sürecinden çıkıyor)
+        try:
+            import audiosession
+            self.audio_label = audiosession.SessionLabeler("SOUND", getattr(self, "_icon_path", None) or ICON, 2.0,
+                                                           self._outputs_changed)
+        except Exception as error:
+            print("Ses karıştırıcısı adı ayarlanamadı:", error)
 
     def set_app_icon(self, accent=None):
         """Pencere / görev çubuğu ikonu: Kişiselleştir'de vurgu rengi seçildiyse o renge boyanmış ikon."""
@@ -449,6 +459,8 @@ class Backend:
         try:
             wintaskbar.set_window_identity(self.hwnd, app_id, path, "SOUND", command)
             self._icon_path = path
+            if getattr(self, "audio_label", None):
+                self.audio_label.poke(path)
         except OSError:
             pass
         return True
@@ -490,6 +502,9 @@ class Backend:
         def apply():
             if self.thumbbar:
                 self.thumbbar.set_state(playing or loading, shuffle, repeat)
+
+        if playing and getattr(self, "audio_label", None):
+            self.audio_label.poke()  # şarkı başlayınca yeni ses oturumu açılmış olabilir
 
         def apply_media():
             if self.media:
@@ -690,6 +705,70 @@ class Backend:
             threading.Timer(1.5, lambda: os._exit(0)).start()
 
     # ---------- ana sayfa ----------
+
+    # ---------- Spotify tarzı mixler (recommender.daily_mixes …) ----------
+
+    def mixes_state(self):
+        """Ana sayfadaki "Senin için mixler": günlük mixler, haftalık keşif, yeni çıkanlar, tekrar tekrar, unutulan favoriler."""
+        cache = self.lib.data.get("mixes") or {}
+        out = list(cache.get("daily") or [])
+        out += [m for m in (cache.get("weekly"), cache.get("radar")) if m]
+        recent = self.lib.listened_tracks(30, 30)
+        if len(recent) >= 5:
+            tracks = [r["track"] for r in recent]
+            out.append({"key": "repeat", "kind": "repeat", "title": "Tekrar Tekrar", "subtitle": "Son 30 günde en çok dinlediklerin",
+                        "tracks": tracks, "covers": [t.get("thumbnail") for t in tracks[:4]], "color": MIX_COLORS[4]})
+        limit = time.time() - 45 * 86400
+        old = [r["track"] for r in self.lib.listened_tracks(None, 300) if r["plays"] >= 3 and r["last"] < limit][:30]
+        if len(old) >= 5:
+            out.append({"key": "forgotten", "kind": "forgotten", "title": "Unutulan Favoriler", "subtitle": "Eskiden çok dinlerdin",
+                        "tracks": old, "covers": [t.get("thumbnail") for t in old[:4]], "color": MIX_COLORS[5]})
+        return {"mixes": out, "loading": self.mixes_loading}
+
+    def ensure_mixes(self, force=False):
+        """Günlük mixler her gün, haftalık keşif ve yeni çıkanlar her hafta (pazartesi) yeniden üretilir (arka planda)."""
+        cache = self.lib.data.get("mixes") or {}
+        day, week = time.strftime("%Y-%m-%d"), time.strftime("%G-W%V")
+        stale = force or cache.get("day") != day or cache.get("week") != week
+        if stale and not self.mixes_loading and self.lib.data["history"]:
+            self.mixes_loading = True
+            threading.Thread(target=self._build_mixes, args=(force,), daemon=True).start()
+        return self.mixes_state()
+
+    def _build_mixes(self, force):
+        cache = dict(self.lib.data.get("mixes") or {})
+        day, week = time.strftime("%Y-%m-%d"), time.strftime("%G-W%V")
+        try:
+            taste = self.taste()
+            listened = self.lib.listened_tracks(60, 80)
+            if len(listened) < 8:  # yeni kullanıcı: tüm geçmiş
+                listened = self.lib.listened_tracks(None, 80)
+            if force or cache.get("day") != day:
+                cache["daily"] = daily_mixes(listened, taste, self.lib.energies)
+                cache["day"] = day
+            if force or cache.get("week") != week:
+                used = {t["id"] for m in cache.get("daily") or [] for t in m["tracks"]}
+                known = self.lib.history_ids() | set(self.lib.data["favorites"]) | used
+                cache["weekly"] = discover_weekly(listened, taste, known)
+                names = [artist for artist, _ in self.lib.top_artists(8)]
+                cache["radar"] = release_radar(names, self.lib.history_ids())
+                cache["week"] = week
+            self.lib._set("mixes", cache)
+        except Exception as error:
+            print("Mixler hazırlanamadı:", error)
+        finally:
+            self.mixes_loading = False
+        self.push("mixes", self.mixes_state())
+
+    def save_mix(self, key):
+        """Bir mixi kitaplığa albüm olarak kaydeder."""
+        mix = next((m for m in self.mixes_state()["mixes"] if m["key"] == key), None)
+        if not mix or not mix["tracks"]:
+            return {"error": "Mix bulunamadı"}
+        self.lib.checkpoint("Mixi kaydet")
+        name = f"{mix['title']} · {time.strftime('%d.%m.%Y')}"
+        album_id = self.lib.create_album(name, tracks=[plain_track(t) for t in mix["tracks"]])
+        return {"id": album_id, "name": name}
 
     def home_state(self):
         cache = self.lib.home_cache or {}
@@ -957,14 +1036,116 @@ class Backend:
         album_id = self.lib.create_album(title, tracks=[plain_track(t) for t in mix])
         return {"id": album_id, "name": title, "count": len(mix), "missing": missing}
 
-    def radio(self, track):
-        """Kuyruk bitince çalmaya devam etmek için benzer şarkılar."""
+    def radio(self, track, context=None, skipped=None, exclude=None):
+        """Kuyruk bitince (ya da aramadan / ana sayfadan tek şarkı çalınınca) devam edecek benzer şarkılar: akıllı sıra.
+        context: bu oturumda az önce çalınanlar, skipped: bu oturumda erken geçilenler, exclude: sıradakiler."""
+        try:
+            taste = self.taste().with_session(skipped)
+            return smart_queue(track, taste, context or (), exclude or (), 25, self.lib.energies)
+        except Exception:
+            pass
+        # yeni algoritma bir nedenle çökerse eski harman
         if track["id"] not in self.radios:
             try:
                 self.radios[track["id"]] = mix_for(track["id"], 25)
             except Exception:
                 return []
         return self.radios[track["id"]]
+
+    # ---------- ses çıkışı: kulaklık / Bluetooth (Windows; telefonda android_main Kotlin'e yönlendirir) ----------
+
+    def audio_outputs(self):
+        if not IS_WINDOWS:
+            return {"outputs": [], "current": None, "switch": False}
+        import audiosession
+        audiosession.ole32.CoInitializeEx(None, 0)
+        return audiosession.outputs()
+
+    def audio_output_select(self, device_id):
+        if not IS_WINDOWS:
+            return {"error": "Bu sistemde desteklenmiyor"}
+        import audiosession
+        audiosession.ole32.CoInitializeEx(None, 0)
+        if not audiosession.set_default(str(device_id)):
+            return {"error": "Ses çıkışı değiştirilemedi"}
+        state = audiosession.outputs()
+        if getattr(self, "audio_label", None):
+            self.audio_label.poke()
+        return state
+
+    def audio_output_more(self):
+        """Yeni bir Bluetooth cihazı bağlamak için sistemin Bluetooth ayarları."""
+        if IS_WINDOWS:
+            os.startfile("ms-settings:bluetooth")
+            return True
+        return False
+
+    def _outputs_changed(self, before, now):
+        """Windows'ta ses çıkışları değişti. Kulaklık bağlanıp varsayılan olunca çalmaya devam, çıkarılınca duraklat."""
+        self.push("audioout", now)
+
+        def head(o):
+            return bool(o) and o["kind"] in ("bluetooth", "headphones")
+        old, new = before.get("current"), now.get("current")
+        old_ids = {o["id"] for o in before.get("outputs") or []}
+        now_ids = {o["id"] for o in now.get("outputs") or []}
+        settings = self.lib.settings
+        if head(old) and old["id"] not in now_ids and settings.get("headset_pause", True):
+            self.push("command", "pause")
+        elif head(new) and new["id"] not in old_ids and settings.get("headset_play", True):
+            self.push("command", "resume")
+
+    def taste(self):
+        """Dinleme geçmişinden zevk: çok dinlenen/favori sanatçılar artı, hep atlananlar eksi (1 dk önbellek)."""
+        cached = getattr(self, "_taste", None)
+        if cached and time.time() - cached[0] < 60:
+            return cached[1]
+        listens = self.lib.taste_listens()
+        skipped, skips, plays = set(), {}, {}
+        for track_id, (artist, seconds, duration) in listens.items():
+            key = main_artist({"artist": artist})
+            if seconds < 30 and (duration or 0) >= 90:
+                skipped.add(track_id)
+                skips[key] = skips.get(key, 0) + 1
+            elif seconds >= min(60, (duration or 120) * 0.5):
+                plays[key] = plays.get(key, 0) + 1
+        tracks = self.lib.data["tracks"]
+        favorites = list(self.lib.data["favorites"])
+        liked = {main_artist({"artist": artist}) for artist, _ in self.lib.top_artists(12)}
+        for track_id in favorites[-150:]:
+            track = tracks.get(track_id)
+            if track:
+                liked.add(main_artist(track))
+        skipped -= set(favorites)  # favoriyi bir kez erken geçmek sevmediğin anlamına gelmez
+        # "Beğenmedim" denenler: şarkı hiç gelmez, sanatçısı üç atlama sayılır, benzerleri de geri plana düşer
+        disliked = self.lib.disliked()
+        for item in disliked:
+            skipped.add(item["id"])
+            key = main_artist(item)
+            if key:
+                skips[key] = skips.get(key, 0) + 3
+        liked.discard("")
+        taste = Taste(liked, favorites, skipped, skips, plays, disliked[-5:])
+        self._taste = (time.time(), taste)
+        return taste
+
+    def album_autofill(self, album_id, count=10):
+        """Albümdeki şarkılara uyan şarkıları bulur ve albüme ekler (geri alınabilir)."""
+        album = self.lib.data["albums"].get(album_id)
+        if not album:
+            return {"error": "Albüm bulunamadı"}
+        tracks = self.lib.album_tracks(album_id)
+        if not tracks:
+            return {"error": "Önce albüme birkaç şarkı ekle; öneriler onlara göre seçilir."}
+        try:
+            picks = album_suggestions(tracks, self.taste(), max(1, min(int(count), 50)))
+        except Exception as error:
+            return {"error": friendly_error(error)}
+        if not picks:
+            return {"error": "Uygun şarkı bulunamadı"}
+        self.lib.checkpoint("Otomatik ekle")
+        added = [t for t in picks if self.lib.add_to_album(album_id, plain_track(t))]
+        return {"added": len(added), "titles": [t["title"] for t in added[:3]]}
 
     def playlist(self, playlist_id):
         if playlist_id in self.playlists:
@@ -1506,7 +1687,8 @@ class TrayMenu:
     her açılışta çalan şarkı ve kullanıcının renkleriyle (settings.ui) yeniden çizilir; dışarı tıklanınca gizlenir.
     Linux'ta ve kurulamazsa pystray'in sistem menüsü kullanılır."""
     TITLE = "SOUND menü"
-    WIDTH, HEIGHT = 280, 284  # mantıksal piksel (traymenu.html içeriğine göre)
+    WIDTH, HEIGHT = 280, 284  # mantıksal piksel (traymenu.html içeriğine göre); ses çıkışları bunun üstüne eklenir
+    OUTPUT_HEAD, OUTPUT_ROW = 34, 36
 
     def __init__(self, backend, base):
         self.backend = backend
@@ -1563,8 +1745,16 @@ class TrayMenu:
         if track:
             info = {"title": track.get("title") or "", "artist": track.get("artist") or "",
                     "art": f"{self.base}/thumb/{track['id']}" if track.get("id") else ""}
+        outputs = []
+        try:
+            import audiosession
+            audiosession.ole32.CoInitializeEx(None, 0)
+            outputs = [{"id": o["id"], "name": o["name"], "kind": o["kind"], "active": o["active"]}
+                       for o in audiosession.outputs()["outputs"]]
+        except Exception:
+            pass
         return {"track": info, "playing": bool(now.get("playing")), "ui": b.lib.settings.get("ui") or {},
-                "volume": b.lib.volume}
+                "volume": b.lib.volume, "outputs": outputs}
 
     def show(self):
         """Sağ tık (tepsi iş parçacığı). Pencere henüz hazır değilse False: sistem menüsü açılır."""
@@ -1600,7 +1790,9 @@ class TrayMenu:
         info = MONITORINFO(cbSize=ctypes.sizeof(MONITORINFO))
         user32.GetMonitorInfoW(user32.MonitorFromPoint(pt, 2), ctypes.byref(info))
         scale = (user32.GetDpiForWindow(self.hwnd) or 96) / 96
-        w, h = round(self.WIDTH * scale), round(self.HEIGHT * scale)
+        state = self.state()
+        extra = self.OUTPUT_HEAD + self.OUTPUT_ROW * len(state["outputs"]) if len(state["outputs"]) > 1 else 0
+        w, h = round(self.WIDTH * scale), round((self.HEIGHT + extra) * scale)
         work = info.rcWork
         gap = round(8 * scale)
         icon = self.backend.tray.icon_rect() if self.backend.tray else None
@@ -1615,7 +1807,7 @@ class TrayMenu:
         x = max(work.left, min(x, work.right - w))  # ekrandan taşmasın
         y = max(work.top, min(y, work.bottom - h))
         try:
-            self.window.evaluate_js(f"render({json.dumps(self.state())})")
+            self.window.evaluate_js(f"render({json.dumps(state)})")
         except Exception:
             pass
         self._set_pos(self.hwnd, x, y, w, h, 0x0010)  # SWP_NOACTIVATE: gösterilmeden önce yerine
@@ -1664,6 +1856,13 @@ class TrayMenuApi:
             return
         self._menu.backend.push("volume", round(value, 3))
 
+    def output(self, device_id):
+        """Menüdeki ses çıkışı listesi: Windows'un varsayılan çıkışını değiştirir."""
+        result = self._menu.backend.audio_output_select(str(device_id))
+        if isinstance(result, dict) and "outputs" in result:
+            self._menu.backend.push("audioout", result)
+        self._menu.hide()
+
     def open(self):
         self._menu.hide()
         self._menu.backend.show_window()
@@ -1696,7 +1895,14 @@ class Api:
         return self._b.snapshot()
 
     def home(self, force=False):
+        self._b.ensure_mixes(force is True)
         return self._b.ensure_home(force)
+
+    def mixes(self, force=False):
+        return self._b.ensure_mixes(force is True)
+
+    def save_mix(self, key):
+        return self._b.save_mix(key)
 
     def search(self, query):
         return self._b.search(query)
@@ -1716,8 +1922,20 @@ class Api:
     def artist_mix(self, refs, count=30, popular=False):
         return self._b.artist_mix(refs, count, popular is True)
 
-    def radio(self, track):
-        return self._b.radio(track)
+    def radio(self, track, context=None, skipped=None, exclude=None):
+        return self._b.radio(track, context, skipped, exclude)
+
+    def album_autofill(self, album_id, count=10):
+        return self._b.album_autofill(album_id, count)
+
+    def audio_outputs(self):
+        return self._b.audio_outputs()
+
+    def audio_output_select(self, device_id):
+        return self._b.audio_output_select(device_id)
+
+    def audio_output_more(self):
+        return self._b.audio_output_more()
 
     def playlist(self, playlist_id):
         return self._b.playlist(playlist_id)
@@ -1740,8 +1958,23 @@ class Api:
     def loudness(self, track_id):
         return self._b.lib.loudness(track_id)
 
-    def set_loudness(self, track_id, lufs, seconds):
-        self._b.lib.set_loudness(track_id, lufs, seconds)
+    def set_loudness(self, track_id, lufs, seconds, energy=None):
+        if isinstance(energy, (int, float)):
+            energy = max(0.0, min(1.0, float(energy)))
+        else:
+            energy = None
+        self._b.lib.set_loudness(track_id, lufs, seconds, energy)
+
+    def dislike(self, track, on=True):
+        """"Beğenmedim": şarkı ve benzerleri akıllı sıraya gelmez (kalıcı; geri alınabilir)."""
+        if not isinstance(track, dict) or not track.get("id"):
+            return False
+        self._b.lib.dislike(track, on is not False)
+        self._b._taste = None
+        return True
+
+    def disliked(self):
+        return self._b.lib.disliked()
 
     def track_info(self, track):
         return self._b.fetch_track_info(track)
@@ -1757,6 +1990,8 @@ class Api:
 
     def update_settings(self, changes):
         self._b.lib.update_settings(changes)
+        if "ui" in changes or "theme_sync" in changes:
+            self._b.cloud._library_changed()  # tema eşitlemesi açıksa diğer cihazlara gitsin
         if "cache_mb" in changes:
             threading.Thread(target=self._b._trim_cache, daemon=True).start()
         if "discord_presence" in changes and self._b.presence:

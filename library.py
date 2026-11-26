@@ -53,6 +53,8 @@ CREATE TABLE IF NOT EXISTS loudness (track_id TEXT PRIMARY KEY, lufs REAL, secon
 CREATE TABLE IF NOT EXISTS added (list TEXT, track_id TEXT, at REAL, PRIMARY KEY (list, track_id));
 """
 DEFAULT_SETTINGS = {"crossfade": False, "crossfade_seconds": 6, "gapless": True, "cache_mb": 1500, "autoplay": True,
+                    "headset_play": True, "headset_pause": True,  # kulaklık bağlanınca çal / çıkınca duraklat
+                    "theme_sync": True,  # tema (renkler) SOUND hesabıyla cihazlar arasında eşitlensin
                     "normalize": True, "norm_target": -14,
                     "cloud_auto": True,  # SOUND hesabı: açılışta ve arka planda kendiliğinden eşitle
                     "tray": True}  # pencereyi kapatınca tepsiye in, arka planda çalmaya devam et
@@ -88,6 +90,10 @@ class Library:
         self.db = sqlite3.connect(DB_FILE, check_same_thread=False, isolation_level=None)
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.executescript(SCHEMA)
+        try:  # 2026-11: şarkının enerjisi (yavaş geçiş için; 0 sakin … 1 hareketli)
+            self.db.execute("ALTER TABLE loudness ADD COLUMN energy REAL")
+        except sqlite3.OperationalError:
+            pass
         if fresh:
             self._import_json()
         self._load()
@@ -982,6 +988,15 @@ class Library:
                             (session, track["id"], track.get("title"), track.get("artist"), track.get("thumbnail"),
                              track.get("url"), track.get("duration") or 0, time.time(), seconds))
 
+    def taste_listens(self, days=120):
+        """Öneriler için: son günlerde dinlenen şarkılar → {kimlik: (sanatçı, en uzun dinleme sn, süre)}.
+        Hep 30 saniyeden önce geçilen şarkı "atlanmış" sayılır."""
+        since = time.time() - days * 86400
+        with self._lock:
+            rows = self.db.execute("""SELECT track_id, artist, MAX(seconds), MAX(duration) FROM listens
+                                      WHERE seeded = 0 AND at >= ? GROUP BY track_id""", (since,)).fetchall()
+        return {row[0]: (row[1] or "", row[2] or 0, row[3] or 0) for row in rows}
+
     def stats(self, period="30"):
         """period: "7", "30" (gün), "year" (bu yıl), "all" (tüm zamanlar)."""
         now = datetime.now()
@@ -1055,11 +1070,53 @@ class Library:
             row = self.db.execute("SELECT lufs, seconds FROM loudness WHERE track_id=?", (track_id,)).fetchone()
         return {"lufs": row[0], "seconds": row[1]} if row else None
 
-    def set_loudness(self, track_id, lufs, seconds):
+    def set_loudness(self, track_id, lufs, seconds, energy=None):
         with self._lock:
-            self.db.execute("""INSERT INTO loudness VALUES (?,?,?) ON CONFLICT(track_id) DO UPDATE
-                               SET lufs=excluded.lufs, seconds=excluded.seconds WHERE excluded.seconds >= loudness.seconds""",
-                            (track_id, lufs, seconds))
+            self.db.execute("""INSERT INTO loudness (track_id, lufs, seconds, energy) VALUES (?,?,?,?) ON CONFLICT(track_id) DO UPDATE
+                               SET lufs=excluded.lufs, seconds=excluded.seconds, energy=COALESCE(excluded.energy, loudness.energy)
+                               WHERE excluded.seconds >= loudness.seconds""",
+                            (track_id, lufs, seconds, energy))
+
+    def energies(self, track_ids):
+        """Ölçülmüş enerjiler: {kimlik: 0..1}. Yalnızca yeterince dinlenmiş (≥60 sn) şarkılar."""
+        ids = [i for i in track_ids if i][:500]
+        if not ids:
+            return {}
+        with self._lock:
+            rows = self.db.execute(f"""SELECT track_id, energy FROM loudness WHERE energy IS NOT NULL AND seconds >= 60
+                                       AND track_id IN ({",".join("?" * len(ids))})""", ids).fetchall()
+        return {row[0]: row[1] for row in rows}
+
+    def listened_tracks(self, days=None, limit=80):
+        """Çok dinlenenden aza: [{"track": {...}, "plays": n, "last": zaman}]. Sayılan dinleme: ≥30 sn ya da şarkının yarısı
+        (eski geçmişten aktarılanlar kendi sayılarıyla). days verilirse yalnızca o kadar gün içindekiler."""
+        since = time.time() - days * 86400 if days else 0
+        with self._lock:
+            rows = self.db.execute("""
+                SELECT track_id, MAX(title), MAX(artist), MAX(thumbnail), MAX(url), MAX(duration),
+                       SUM(CASE WHEN seeded = 1 THEN plays WHEN seconds >= 30 OR (duration > 0 AND seconds >= duration * 0.5)
+                                THEN 1 ELSE 0 END) AS n, MAX(at)
+                FROM listens WHERE at >= ? GROUP BY track_id HAVING n > 0 ORDER BY n DESC, MAX(at) DESC LIMIT ?""",
+                                   (since, limit)).fetchall()
+        known = self.data["tracks"]
+        out = []
+        for track_id, title, artist, thumbnail, url, duration, plays, last in rows:
+            track = known.get(track_id) or {"id": track_id, "title": title or "Adsız parça", "artist": artist or "Bilinmeyen sanatçı",
+                                            "thumbnail": thumbnail, "url": url or f"https://www.youtube.com/watch?v={track_id}",
+                                            "duration": duration or 0}
+            out.append({"track": dict(track), "plays": plays, "last": last or 0})
+        return out
+
+    # ---------- beğenilmeyenler: akıllı sıra bunları ve benzerlerini getirmez ----------
+
+    def disliked(self):
+        return list(self.data.get("disliked") or [])
+
+    def dislike(self, track, on=True):
+        items = [d for d in self.disliked() if d.get("id") != track.get("id")]
+        if on:
+            items.append({"id": track["id"], "title": track.get("title", ""), "artist": track.get("artist", ""), "at": time.time()})
+        self._set("disliked", items[-300:])
 
     # ---------- şarkı sözleri ----------
 

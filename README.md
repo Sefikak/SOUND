@@ -56,6 +56,20 @@ Henüz yok: video indirme, YouTube Music'ten ve Spotify dosyasından içe aktarm
 
 Telefonun listelerini ve hesabını alması için telefonda **SOUND 0.1.14 veya üstü** olmalı. Bluetooth kulaklık bağlı değilse saatin hoparlöründen çalar.
 
+#### Saatten bilgisayarı kumanda etmek
+
+1. **Bir kerelik hazırlık:** telefonda ve bilgisayarda aynı **SOUND hesabıyla** giriş yap, bilgisayarda SOUND açık olsun. Telefon yakındayken saatte SOUND'u bir kez aç; saat bağlantı bilgisini telefondan alır. Sonrasında telefon gerekmez, saatin internete (Wi-Fi) bağlı olması yeter.
+2. Saatte SOUND'u aç, **üstteki küçük düğmeye** (⌚ SAAT / 📱 TELEFON yazan) dokun.
+3. **"Nerede çalsın?"** listesinde, **SOUND hesabındaki cihazlar** altında bilgisayarını seç.
+4. Üstte bilgisayarının adı (💻) görünür, ekran bilgisayarda çalanı gösterir:
+   - **▶ / ❚❚** çal / duraklat, **⏮ ⏭** önceki / sonraki
+   - **Döner çerçeve** bilgisayarın sesini açar / kısar
+   - **♥ / 👎** beğen / beğenmedim
+   - **Kitaplık (♫)** listeden ya da aramadan seçtiğin şarkı bilgisayarda çalar
+5. **Çalmayı taşımak:** aynı listeden **Bu saat**'i seçersen bilgisayarda çalan şarkı kaldığı yerden saate geçer; saatte çalarken bilgisayarı seçersen şarkı bilgisayara geçer. Bilgisayar da saatte çalanı görür ve kumanda edebilir.
+
+Bilgisayar listede görünmüyorsa: telefondaki SOUND'un 0.1.14 veya üstü ve hesabın açık olduğunu, bilgisayardaki SOUND'un güncel ve açık olduğunu kontrol et, sonra telefon yakındayken saatte SOUND'u kapatıp yeniden aç.
+
 Saate kurmak (Play Store'da olmadığı için elle):
 1. Saatte **Ayarlar › Telefon hakkında › Yazılım bilgisi**'nde *Yazılım sürümü*ne 5 kez dokun (Geliştirici seçenekleri açılır).
 2. **Ayarlar › Geliştirici seçenekleri**'nde *ADB hata ayıklama* ve *Kablosuz hata ayıklama*yı aç.

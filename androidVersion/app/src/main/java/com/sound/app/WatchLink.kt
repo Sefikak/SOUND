@@ -28,6 +28,7 @@ object WatchLink {
     private var art: ByteArray? = null
     private var artId: String? = null
     private var listsJson: String? = null
+    private var fullJson: String? = null
 
     /** Arayüzdeki çalma durumu (android_main.player_state: şarkı, çalıyor mu, beğeni, ses, vurgu rengi). */
     fun publishState(context: Context, json: JSONObject) {
@@ -58,20 +59,30 @@ object WatchLink {
         if (state.optString("id") == id) put(context, NOW, state.put("at", System.currentTimeMillis()).toString(), art)
     }
 
-    /** Saatteki Kitaplık ekranı: favoriler, mixler, albümler (android_main.watch_lists). */
-    fun publishLists(context: Context, json: String) {
-        if (json == listsJson) return
+    /**
+     * Saatteki Kitaplık ekranı: favoriler, mixler, albümler (android_main.watch_lists). full: listelerin şarkıları
+     * (watch_library); saat telefonsuzken bunlardan çalar. Veri öğesi 100 KB ile sınırlı olduğu için sıkıştırılmış ek olarak gider.
+     */
+    fun publishLists(context: Context, json: String, full: String) {
+        if (json == listsJson && full == fullJson) return
         listsJson = json
-        put(context, LISTS, json, null)
+        fullJson = full
+        put(context, LISTS, json, null, gzip(full))
     }
 
-    private fun put(context: Context, path: String, json: String, image: ByteArray?) {
+    private fun gzip(text: String): ByteArray = ByteArrayOutputStream().use { out ->
+        java.util.zip.GZIPOutputStream(out).use { it.write(text.toByteArray()) }
+        out.toByteArray()
+    }
+
+    private fun put(context: Context, path: String, json: String, image: ByteArray?, full: ByteArray? = null) {
         val app = context.applicationContext
         io.execute {
             runCatching {
                 val request = PutDataMapRequest.create(path)
                 request.dataMap.putString("json", json)
                 image?.let { request.dataMap.putAsset("art", Asset.createFromBytes(it)) }
+                full?.let { request.dataMap.putAsset("full", Asset.createFromBytes(it)) }
                 Tasks.await(Wearable.getDataClient(app).putDataItem(request.asPutDataRequest().setUrgent()), 10, TimeUnit.SECONDS)
             }.onFailure { Log.d("SOUND", "Saate yazılamadı ($path): ${it.message}") }
         }
@@ -80,11 +91,14 @@ object WatchLink {
     /** Saat bağlandı / uygulama açıldı: son durum yeniden yazılır (Data Layer zaten saklar; yine de taze zaman damgası). */
     fun refresh(context: Context) {
         if (state.length() > 0) put(context, NOW, state.put("at", System.currentTimeMillis()).toString(), if (artId == state.optString("id")) art else null)
-        listsJson?.let { put(context, LISTS, it, null) }
+        listsJson?.let { put(context, LISTS, it, null, fullJson?.let(::gzip)) }
     }
 }
 
-/** Saatten gelen komutlar: /sound/cmd (toggle, next, previous, like, vol_up, vol_down…), /sound/play (bir liste), /sound/hello. */
+/**
+ * Saatten gelen komutlar: /sound/cmd (toggle, next, previous, like, vol_up, vol_down…), /sound/play (bir liste ya da şarkı),
+ * /sound/hello, /sound/like (saat telefonsuz çalarken beğenilen şarkı; SOUND kapalıysa dosyada bekler, açılınca işlenir).
+ */
 class WatchService : WearableListenerService() {
     override fun onMessageReceived(event: MessageEvent) {
         val data = String(event.data)
@@ -96,6 +110,10 @@ class WatchService : WearableListenerService() {
             }
             "/sound/play" -> {
                 if (ready) call("watch_play", data) else PlaybackService.command(this, "play")
+            }
+            "/sound/like" -> {
+                if (ready) call("watch_like", data)
+                else runCatching { filesDir.resolve("watch_likes.jsonl").appendText(data.replace('\n', ' ') + '\n') }
             }
             "/sound/hello" -> {
                 WatchLink.refresh(this)

@@ -2,6 +2,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-feature android:name="android.hardware.type.watch" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- telefonsuz çalma: internet (Wi-Fi), ön planda çalma ve saate indirme -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- kendini güncelleme: GitHub'dan inen yeni sürümü kullanıcı onayıyla kurar -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:label="SOUND"
@@ -9,8 +19,8 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:allowBackup="false"
         android:theme="@style/SoundWear">
-        <!-- Telefondaki SOUND'u kumanda eder; telefon olmadan çalmaz -->
-        <meta-data android:name="com.google.android.wearable.standalone" android:value="false" />
+        <!-- Telefon yakındaysa telefondaki SOUND'u kumanda eder, değilse kendi başına çalar -->
+        <meta-data android:name="com.google.android.wearable.standalone" android:value="true" />
 
         <activity android:name=".NowActivity" android:exported="true" android:taskAffinity="" android:launchMode="singleTask">
             <intent-filter>
@@ -19,6 +29,12 @@
             </intent-filter>
         </activity>
         <activity android:name=".LibraryActivity" android:exported="false" />
+        <activity android:name=".DevicesActivity" android:exported="false" />
+        <receiver android:name=".InstallReceiver" android:exported="false" />
+        <activity android:name=".SearchActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
+
+        <service android:name=".PlayerService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
+        <service android:name=".DownloadService" android:exported="false" android:foregroundServiceType="dataSync" />
 
         <!-- telefonda şarkı değişince kart güncellensin -->
         <service android:name=".DataService" android:exported="true">

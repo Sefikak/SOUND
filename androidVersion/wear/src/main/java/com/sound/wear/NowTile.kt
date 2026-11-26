@@ -14,6 +14,7 @@ import androidx.wear.tiles.TileBuilders
 import androidx.wear.tiles.TileService
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import org.json.JSONObject
 
 /** Kaydırınca açılan kart: çalan şarkı, önceki / çal-duraklat / sonraki. Dokununca uygulama açılır. */
 class NowTile : TileService() {
@@ -21,21 +22,35 @@ class NowTile : TileService() {
     private val dim = 0xFFB8B8C0.toInt()
 
     override fun onTileRequest(req: RequestBuilders.TileRequest): ListenableFuture<TileBuilders.Tile> {
-        when (req.currentState.lastClickableId) {
-            "prev" -> Link.command(this, "previous")
-            "toggle" -> Link.command(this, "toggle")
-            "next" -> Link.command(this, "next")
+        val local = Where.watch(this)
+        val device = Where.device(this)
+        if (local) LocalPlayer.init(this)
+        if (device != null) Remote.start(this)
+        val click = req.currentState.lastClickableId
+        when {
+            local -> when (click) { "prev" -> LocalPlayer.previous(this); "toggle" -> LocalPlayer.toggle(this); "next" -> LocalPlayer.next(this) }
+            device != null -> when (click) { "prev" -> Remote.cmd(device, "previous"); "toggle" -> Remote.cmd(device, "toggle"); "next" -> Remote.cmd(device, "next") }
+            else -> when (click) { "prev" -> Link.command(this, "previous"); "toggle" -> Link.command(this, "toggle"); "next" -> Link.command(this, "next") }
         }
-        val now = Link.cached(this)
+        val now = when {
+            local -> LocalPlayer.state()
+            device != null -> Remote.np(device)?.let { np ->
+                val t = np.optJSONObject("track") ?: return@let null
+                JSONObject().put("id", t.optString("id")).put("title", t.optString("title")).put("artist", t.optString("artist"))
+                    .put("playing", np.optBoolean("playing"))
+            }
+            else -> Link.cached(this)
+        }
         val accent = runCatching { android.graphics.Color.parseColor(now?.optString("accent") ?: "#8b5cf6") }.getOrDefault(0xFF8B5CF6.toInt())
         var playing = now?.optBoolean("playing") == true
-        if (req.currentState.lastClickableId == "toggle") playing = !playing  // telefondan yanıt gelmeden doğru görünsün
+        if (local) playing = LocalPlayer.playing
+        else if (click == "toggle") playing = !playing  // telefondan yanıt gelmeden doğru görünsün
         val col = LayoutElementBuilders.Column.Builder().setWidth(expand()).setHorizontalAlignment(LayoutElementBuilders.HORIZONTAL_ALIGN_CENTER)
-        col.addContent(txt("SOUND", 12f, accent, bold = true))
+        col.addContent(txt(when { local -> "SOUND · SAAT"; device != null -> "SOUND · ${Remote.deviceName(device)}"; else -> "SOUND" }, 12f, accent, bold = true))
         col.addContent(space(6f))
         if (now == null || now.optString("id").isEmpty()) {
             col.addContent(txt("Şu an bir şey çalmıyor", 14f, text, bold = true))
-            col.addContent(txt("Telefonda SOUND'u aç", 12f, dim))
+            col.addContent(txt(if (local) "Dokun, kitaplıktan seç" else "Telefonda SOUND'u aç", 12f, dim))
         } else {
             col.addContent(txt(now.optString("title"), 15f, text, bold = true))
             col.addContent(txt(now.optString("artist"), 12f, dim))

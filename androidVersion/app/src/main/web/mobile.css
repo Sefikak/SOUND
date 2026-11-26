@@ -160,6 +160,9 @@ html.mobile #bar .np .a { font-size: 12px; color: rgb(var(--ink) / 75%); }
 html.mobile #bar .np .rb.heart { display: grid; place-items: center; flex: none; width: 40px; height: 44px; opacity: 1; color: var(--text); }
 html.mobile #bar .np .rb.heart svg { width: 22px; height: 22px; }
 html.mobile #bar .np .rb.heart.on { color: var(--accent-light); }
+html.mobile #bar .np .np-acts { flex: none; gap: 0; }
+html.mobile #bar .np .rb.npdis { display: grid; place-items: center; flex: none; width: 36px; height: 44px; opacity: 1; color: rgb(var(--ink) / 75%); }
+html.mobile #bar .np .rb.npdis svg { width: 19px; height: 19px; }
 html.mobile #bar .pp { width: 42px; height: 42px; background: none; color: var(--text); box-shadow: none; }
 html.mobile #bar .pp svg { width: 26px; height: 26px; }
 html.mobile #bar #nextBtn { display: none; }

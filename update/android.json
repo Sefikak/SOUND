@@ -1,14 +1,11 @@
 {
-  "versionCode": 14,
-  "versionName": "0.1.13",
-  "sha256": "53d08431fa9d3552ea96f3f376d5b3512e4eb1767f7216cd3c34c6f62f722541",
-  "url": "https://github.com/Sefikak/SOUND/raw/android-0.1.13/SOUND-android-0.1.13.apk",
+  "versionCode": 15,
+  "versionName": "0.1.14",
+  "sha256": "de7ead8a545e08af356c9b3deeab99cc9dd720d302c1ecb86e435f56a57a15c6",
+  "url": "https://github.com/Sefikak/SOUND/raw/android-0.1.14/SOUND-android-0.1.14.apk",
   "notes": [
-    "Akıllı sıra: aramadan ve ana sayfadan çalınca benzer şarkılar",
-    "Günlük Mix, Haftalık Keşif, Yeni Çıkanlar",
-    "Beğenmedim düğmesi, yavaş geçiş",
-    "Kulaklık bağlanınca uygulama kapalıyken de çalar, ses çıkışı seçimi",
-    "Açık temalar, tema eşitleme, yeni Ayarlar",
-    "Galaxy Watch uygulaması"
+    "Galaxy Watch: saat telefonsuz çalar, saate indir, PC'yi saatten kumanda et",
+    "Saat telefonun kitaplığını ve beğenilerini alır",
+    "Alt çubukta büyük kalp ve Beğenmedim düğmesi"
   ]
 }

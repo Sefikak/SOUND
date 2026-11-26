@@ -263,6 +263,9 @@ def start(data_dir, native):
     # sistem bildirimi: masaüstündeki tepsi baloncuğu yerine Android bildirimi (MainActivity.Native.notify)
     _backend.notify = lambda title, body, target="": native.notify(str(title)[:60], str(body)[:250], str(target)[:80]) or True
     _patch_audio(native, _backend)
+    global _watch_likes_file
+    _watch_likes_file = os.path.join(os.path.dirname(data_dir), "watch_likes.jsonl")
+    threading.Timer(5, _drain_watch_likes).start()
     # yt_dlp arayüz açılırken arka planda yüklenir; ilk arama/çalma onu beklemesin diye hemen başlıyor
     threading.Thread(target=updater.warm, daemon=True, name="ytdlp-warm").start()
     threading.Timer(30, updater.verify).start()
@@ -337,6 +340,41 @@ def watch_lists():
         "mixes": mixes,
         "albums": [{"id": album_id, "title": album["name"], "count": len(album["tracks"])} for album_id, album in albums[:40]],
         "recent": [{"id": t["id"], "title": t["title"], "artist": t["artist"]} for t in lib.recent_tracks(12)],
+        "devices": _devices_key(),
+        "at": time.time(),
+    }
+
+
+def _devices_key():
+    """Saat de hesabın cihazlarından biri olsun (PC'yi kumanda etsin, PC onu görsün): cihaz kanalının anahtarı.
+    Yalnızca bu uygulamanın saatteki eşine (aynı imza) Data Layer üzerinden gider."""
+    try:
+        cloud = _backend.cloud
+        if cloud.status().get("signed_in"):
+            return cloud.state.get("devices_key") or ""
+    except Exception:
+        pass
+    return ""
+
+
+def _slim(track):
+    return {"id": track["id"], "title": track.get("title") or "", "artist": track.get("artist") or "",
+            "duration": int(track.get("duration") or 0)}
+
+
+def watch_library():
+    """Saatin telefonsuz çalabilmesi için listelerin şarkıları (saat bunu saklar; telefon uzaktayken buradan çalar)."""
+    lib = _backend.lib
+    cache = lib.data.get("mixes") or {}
+    mixes = [{"key": m["key"], "title": m["title"], "sub": m.get("subtitle", ""), "tracks": [_slim(t) for t in m.get("tracks") or []]}
+             for m in list(cache.get("daily") or []) + [m for m in (cache.get("weekly"), cache.get("radar")) if m]]
+    albums = sorted(lib.data["albums"].items(), key=lambda kv: kv[1].get("created") or 0, reverse=True)
+    return {
+        "favorites": [_slim(t) for t in lib.favorite_tracks()[:1000]],
+        "albums": [{"id": album_id, "title": album["name"], "tracks": [_slim(t) for t in lib.album_tracks(album_id)]}
+                   for album_id, album in albums[:60]],
+        "mixes": mixes,
+        "recent": [_slim(t) for t in lib.recent_tracks(30)],
         "at": time.time(),
     }
 
@@ -344,9 +382,45 @@ def watch_lists():
 def watch_lists_now():
     if _backend:
         try:
-            _native().watchLists(json.dumps(watch_lists(), ensure_ascii=False))
+            _drain_watch_likes()
+            _native().watchLists(json.dumps(watch_lists(), ensure_ascii=False), json.dumps(watch_library(), ensure_ascii=False))
         except Exception:
             traceback.print_exc(file=sys.stderr)
+
+
+_watch_likes_file = None
+
+
+def watch_like(data_json):
+    """Saatte (telefonsuz çalarken) beğenilen / beğeni kaldırılan şarkı: {"track": {...}, "on": true}.
+    "dislike": true ise "Beğenmedim" listesine eklenir / çıkarılır."""
+    if not _backend:
+        return
+    try:
+        data = json.loads(data_json)
+        track = dict(data["track"])
+        track.setdefault("url", f"https://www.youtube.com/watch?v={track['id']}")
+        if data.get("dislike"):
+            _backend.lib.dislike(track, bool(data.get("on")))
+        elif bool(data.get("on")) != _backend.lib.is_favorite(track["id"]):
+            _backend.lib.toggle_favorite(track)
+    except Exception:
+        traceback.print_exc(file=sys.stderr)
+
+
+def _drain_watch_likes():
+    """SOUND kapalıyken saatten gelen beğeniler WatchService tarafından dosyada bekletilir."""
+    if not _watch_likes_file or not os.path.exists(_watch_likes_file):
+        return
+    try:
+        with open(_watch_likes_file, encoding="utf-8") as file:
+            lines = file.read().splitlines()
+        os.remove(_watch_likes_file)
+    except OSError:
+        return
+    for line in lines:
+        if line.strip():
+            watch_like(line)
 
 
 def watch_play(data_json):

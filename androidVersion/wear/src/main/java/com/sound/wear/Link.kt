@@ -51,8 +51,24 @@ object Link {
             }
             findPhone(app)
             changed()
-            sendNow(app, "/sound/hello", "")
+            if (sendNow(app, "/sound/hello", "")) sendLikes(app)
         }
+    }
+
+    /** Saatte yapılan beğenileri telefona gönder (telefon yoksa sonra). */
+    fun flushLikes(context: Context) {
+        val app = context.applicationContext
+        io.execute { sendLikes(app) }
+    }
+
+    private fun sendLikes(app: Context) {
+        val pending = Lib.takePending(app)
+        val failed = mutableListOf<JSONObject>()
+        for (i in 0 until pending.length()) {
+            val item = pending.getJSONObject(i)
+            if (failed.isNotEmpty() || !sendNow(app, "/sound/like", item.toString())) failed += item
+        }
+        Lib.putBack(app, failed)
     }
 
     private fun findPhone(app: Context) {
@@ -88,7 +104,18 @@ object Link {
                 }.getOrNull()
                 app.getSharedPreferences("sound", Context.MODE_PRIVATE).edit().putString("now", json.toString()).apply()
             }
-            LISTS -> lists = json
+            LISTS -> {
+                lists = json
+                json.optString("devices").takeIf { it.isNotEmpty() }?.let { Remote.setKey(app, it) }  // hesabın cihaz kanalı
+                // listelerin şarkıları (sıkıştırılmış ek): telefon uzaktayken saat bunlardan çalar
+                map.getAsset("full")?.let { asset ->
+                    runCatching {
+                        val fd = Tasks.await(Wearable.getDataClient(app).getFdForAsset(asset), 20, TimeUnit.SECONDS)
+                        val text = fd.inputStream.use { java.util.zip.GZIPInputStream(it).bufferedReader().readText() }
+                        Lib.save(app, JSONObject(text))
+                    }
+                }
+            }
         }
     }
 
@@ -106,16 +133,16 @@ object Link {
         io.execute { sendNow(app, path, data) }
     }
 
-    private fun sendNow(app: Context, path: String, data: String) {
+    private fun sendNow(app: Context, path: String, data: String): Boolean {
         if (phoneNode == null) findPhone(app)
-        val node = phoneNode ?: run { changed(); return }
-        runCatching {
+        val node = phoneNode ?: run { changed(); return false }
+        return runCatching {
             Tasks.await(Wearable.getMessageClient(app).sendMessage(node, path, data.toByteArray()), 10, TimeUnit.SECONDS)
         }.onFailure {
             phoneNode = null  // bağlantı koptu: bir dahaki sefere yeniden aranır
             phoneReachable = false
             changed()
-        }
+        }.isSuccess
     }
 
     /** Şarkının şu anki konumu (sn): telefonun yazdığı konum + o andan beri geçen süre. */

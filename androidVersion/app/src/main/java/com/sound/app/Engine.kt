@@ -266,7 +266,7 @@ object Engine {
         // ---------- ses çıkışı (app.js aoSection) ----------
 
         /** Saatteki Kitaplık ekranı için listeler (android_main.watch_lists). */
-        fun watchLists(json: String) = WatchLink.publishLists(app, json)
+        fun watchLists(json: String, full: String) = WatchLink.publishLists(app, json, full)
 
         fun audioOutputs(): String = AudioOutputs.state(app).toString()
 

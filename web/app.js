@@ -54,6 +54,7 @@ const I = {
   bluetooth: stroke('<path d="m7 7 10 10-5 4.5v-19L17 7 7 17"/>', 2),
   laptop: stroke('<rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/>', 2),
   phone: stroke('<rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18h2"/>', 2),
+  watch: stroke('<circle cx="12" cy="12" r="6"/><path d="M9 6.5 9.6 2h4.8l.6 4.5M9 17.5l.6 4.5h4.8l.6-4.5M12 9.5V12l1.5 1.5"/>', 2),
   person: stroke('<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.5 4-7 8-7s7 2.5 8 7"/>', 2),
   minus: stroke('<circle cx="12" cy="12" r="9"/><path d="M8 12h8"/>', 2),
   radio: stroke('<circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5"/>', 2),
@@ -2240,7 +2241,10 @@ async function watchPlay(d) {
   if (d.kind === "favorites") { const t = L.favTracks(); if (t.length) P.playList(t, P.shuffle ? Math.floor(Math.random() * t.length) : 0, "favorites"); }
   else if (d.kind === "album" && L.album(d.id)) { const t = L.albumTracks(d.id); if (t.length) P.playList(t, 0, `album:${d.id}`); }
   else if (d.kind === "mix") { const m = findMix(d.key); if (m && m.tracks.length) P.playList(m.tracks, 0, `mix:${m.key}`); }
-  else if (d.kind === "track" && L.t(d.id)) P.playList([L.t(d.id)], 0, `home:watch`);  // tek şarkı: akıllı sırayla devam
+  else if (d.kind === "track") {  // tek şarkı (saatteki aramadan ya da saatten telefona geçerken): akıllı sırayla devam
+    const t = L.t(d.id) || (d.track?.id === d.id ? { ...d.track, url: `https://www.youtube.com/watch?v=${d.id}` } : null);
+    if (t) P.playList([t], 0, `home:watch`);
+  }
 }
 /* kısayol: sıradaki ses çıkışına geç (hoparlör → kulaklık → …) */
 async function aoCycle() {
@@ -2279,7 +2283,7 @@ async function openDevices() {
         return;
       }
       const active = dvRemote() ? DV.remote : DV.me;
-      const rows = DV.devices.map(d => `<button class="dv-row${d.id === active ? " on" : ""}" data-dv="${esc(d.id)}">${d.kind === "phone" ? I.phone : I.laptop}
+      const rows = DV.devices.map(d => `<button class="dv-row${d.id === active ? " on" : ""}" data-dv="${esc(d.id)}">${d.kind === "phone" ? I.phone : d.kind === "watch" ? I.watch : I.laptop}
         <span><b>${esc(d.name)}</b><small>${d.id === active ? (d.id === DV.me ? "Bu cihazda çalıyor" : "Şu an burada çalıyor") : d.id === DV.me ? "Bu cihaz" : "Buraya geçir"}</small></span></button>`).join("");
       const volume = dvRemote() && DV.np ? `<div class="set-sec">${esc(dvName(DV.remote))} ses düzeyi</div><input type="range" class="dv-vol" min="0" max="100" value="${Math.round(DV.np.volume * 100)}">` : "";
       body.innerHTML = `${aoSection()}<div class="set-sec">SOUND cihazları</div>${DV.on ? "" : `<p>Bağlanıyor…</p>`}<div class="dv-list">${rows}</div>
@@ -2857,7 +2861,7 @@ function playerChanged(trackChanged = false) {
     if (np.dataset.id !== t.id) {
       np.dataset.id = t.id;
       np.innerHTML = `<img src="${thumb(t)}" data-act="showPanel"><div class="tt"><div class="t" data-act="showPanel">${esc(t.title)}</div><div class="a"></div></div>
-        <button class="rb heart" data-act="favCurrent"></button>`;
+        <div class="np-acts"><button class="rb heart" data-act="favCurrent"></button><button class="rb npdis" data-act="dislikeCurrent" title="Beğenmedim: bunu ve benzerlerini çalma">${I.thumbDown}</button></div>`;
     }
     const a = $(".a", np);
     a.textContent = P.netWait ? "Bağlantı bekleniyor…" : P.loading ? "Hazırlanıyor…" : t.artist;

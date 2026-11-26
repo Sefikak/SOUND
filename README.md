@@ -34,7 +34,7 @@ Kaldırmak için: `bash ~/.local/share/sound/linux/uninstall.sh`
 
 ## Mobil sürüm (Android)
 
-### [⬇ SOUND-android-0.1.13.apk'yı indir](https://github.com/Sefikak/SOUND/raw/android-0.1.13/SOUND-android-0.1.13.apk)
+### [⬇ SOUND-android-0.1.14.apk'yı indir](https://github.com/Sefikak/SOUND/raw/android-0.1.14/SOUND-android-0.1.14.apk)
 
 **Erken deneme sürümü:** Sorun çıkabilir. 32 ve 64 bit telefonlarda kurulabilir.
 
@@ -47,15 +47,20 @@ Henüz yok: video indirme, YouTube Music'ten ve Spotify dosyasından içe aktarm
 
 ## Galaxy Watch / Wear OS
 
-### [⬇ SOUND-watch-1.0.apk'yı indir](https://github.com/Sefikak/SOUND/raw/wear-1.0/SOUND-watch-1.0.apk)
+### [⬇ SOUND-watch-1.1.apk'yı indir](https://github.com/Sefikak/SOUND/raw/wear-1.1/SOUND-watch-1.1.apk)
 
-Saatten telefondaki SOUND'u kumanda edersin: çalan şarkı ve kapak, çal/duraklat, önceki/sonraki, beğen, döner çerçeveyle ses, kitaplıktan (favoriler, mixler, albümler, son çalınanlar) şarkı başlatma ve kaydırınca açılan kart. Telefonda **SOUND 0.1.13 veya üstü** kurulu olmalı; saat telefon olmadan müzik çalmaz.
+- **Telefonsuz çalar:** saat Wi-Fi'dan şarkı arar ve çalar, ardından benzer şarkılarla devam eder. Listeleri **saate indirip** internetsiz de dinleyebilirsin (Kitaplık'ta listenin yanındaki ⬇).
+- **Telefonu kumanda eder:** çalan şarkı ve kapak, çal/duraklat, önceki/sonraki, beğen / beğenmedim, döner çerçeveyle ses, kaydırınca açılan kart.
+- **Bilgisayardaki SOUND'u kumanda eder:** şarkıyı değiştir, sesi aç/kıs, çalmayı saate ya da başka cihaza aktar. Bilgisayar da saatte çalanı görüp kumanda edebilir. Bunun için telefonda SOUND hesabına giriş yapılmış olmalı.
+- **Kendini günceller:** yeni sürüm çıkınca saat indirir, Kitaplık'ta "Güncelleme hazır" görünür (ilk seferde saat bir kez yükleme izni ister).
+
+Telefonun listelerini ve hesabını alması için telefonda **SOUND 0.1.14 veya üstü** olmalı. Bluetooth kulaklık bağlı değilse saatin hoparlöründen çalar.
 
 Saate kurmak (Play Store'da olmadığı için elle):
 1. Saatte **Ayarlar › Telefon hakkında › Yazılım bilgisi**'nde *Yazılım sürümü*ne 5 kez dokun (Geliştirici seçenekleri açılır).
 2. **Ayarlar › Geliştirici seçenekleri**'nde *ADB hata ayıklama* ve *Kablosuz hata ayıklama*yı aç.
 3. Telefona **Bugjaeger** ya da **Wear Installer 2** gibi bir uygulama kur, saatte *Cihazı eşleme kodu ile eşle*'deki kod ve adresle eşleştir, APK'yı seçip saate yükle.
-   Bilgisayardan: `adb pair <adres:port> <kod>` → `adb connect <adres:port>` → `adb install SOUND-watch-1.0.apk`
+   Bilgisayardan: `adb pair <adres:port> <kod>` → `adb connect <adres:port>` → `adb install SOUND-watch-1.1.apk`
 
 ## Özellikler
 

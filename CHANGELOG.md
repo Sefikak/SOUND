@@ -4,6 +4,17 @@ Her güncellemede yenilikler en üste eklenir; eskiler aşağıda durur. Bilgisa
 
 ---
 
+## 26 Kasım 2026 · Android 0.1.14 + Galaxy Watch 1.1 + masaüstü
+
+### Yeni
+- **Saat telefonsuz çalar:** Galaxy Watch artık kendi başına şarkı arayıp Wi-Fi'dan çalar; şarkı bitince benzerleri gelir (telefondaki akıllı sıra). Sıradaki şarkı önceden indiği için geçişler beklemesiz.
+- **Saate indir:** saatteki Kitaplık'ta her listenin yanında ⬇ düğmesi. İndirilen listeler internet yokken de çalar; "Tüm indirilenler" karışık çalar.
+- **Saatten bilgisayarı kumanda et:** saatin üstündeki düğmeye bas, "Nerede çalsın?" listesinden bilgisayarını seç. Şarkıyı değiştir, duraklat, döner çerçeveyle sesi aç/kıs, kitaplıktan ya da aramadan bilgisayarda çal. Çalmayı saate ya da başka cihaza aktarabilirsin; bilgisayar da saatte çalanı görüp kumanda eder.
+- **Saatte arama:** klavyeyle ya da sesle.
+- **Saat kendini günceller:** yeni sürüm çıkınca kendisi indirir, Kitaplık'ta "Güncelleme hazır" görünür.
+- **Saatte beğen / beğenmedim:** telefon yokken yapılanlar da telefon yakına gelince hesabına işlenir.
+- **Alt çubukta büyük kalp ve 👎 Beğenmedim düğmesi** (bilgisayarda ve telefonda).
+
 ## 26 Kasım 2026 · Android 0.1.13 + masaüstü + Galaxy Watch 1.0
 
 ### Yeni

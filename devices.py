@@ -91,7 +91,7 @@ class Devices:
         for device, metas in list(self.peers.items()):
             if metas:
                 meta = list(metas.values())[-1]
-                people.append({"id": device, "name": _text(meta.get("name"), 40) or "Cihaz", "kind": "phone" if meta.get("kind") == "phone" else "pc"})
+                people.append({"id": device, "name": _text(meta.get("name"), 40) or "Cihaz", "kind": meta.get("kind") if meta.get("kind") in ("phone", "watch") else "pc"})
         people.sort(key=lambda d: (d["id"] != self.me, d["name"].casefold()))
         return {"signed_in": bool(self.cloud.status().get("signed_in")), "connected": self.connected, "me": self.me, "name": self.name, "kind": self.kind, "devices": people}
 

@@ -322,6 +322,14 @@ html:not(.mobile) #bar { column-gap: 12px; }  /* sağdaki düğmeler ilerleme ç
 .np .a.loading { color: var(--accent-light); }
 .np .rb { color: var(--sub); }
 .np .rb.on { color: var(--accent-light); }
+/* alt çubukta kalp büyük, yanında "beğenmedim" */
+.np .np-acts { display: flex; align-items: center; gap: 2px; flex: none; }
+#app.np-right .np .np-acts { flex-direction: row-reverse; }
+.np .rb.heart { width: 40px; height: 40px; }
+.np .rb.heart svg { width: 26px; height: 26px; }
+.np .rb.npdis { width: 34px; height: 34px; }
+.np .rb.npdis svg { width: 20px; height: 20px; }
+.np .rb.npdis:hover { color: var(--text); }
 .center { display: flex; flex-direction: column; align-items: center; gap: 0; min-width: 0; }
 .ctrl { display: flex; align-items: center; gap: 18px; }
 .ib { width: 34px; height: 34px; display: grid; place-items: center; color: var(--sub); border-radius: 50%; position: relative;

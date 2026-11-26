@@ -120,6 +120,7 @@
       const cur = P.current;
       glowFrom(cur ? thumb(cur) : null, "#3b2470");
       api.home().then(h => { S.home = h; });
+      api.mixes().then(m => { const had = JSON.stringify(S.mixes); S.mixes = m; if (JSON.stringify(m) !== had && S.page.kind === "home") renderPage(true); });
     };
     const quick = [
       { title: "Favoriler", art: tile("fav", 56, I.heart, "#6d4ae0", 0), page: "favorites", src: "favorites" },
@@ -141,6 +142,7 @@
       registerList("home:radio", recent.slice(0, 8), { kind: "home", key: "home:radio" });
       html += section("Senin için radyolar", null, `<div class="cards">${recent.slice(0, 8).map((t, i) => radioHTML("home:radio", i, t)).join("")}</div>`);
     }
+    html += mixesSection();
     const sections = S.home.sections || [];
     if (sections.length) {
       for (const s of sections) {
@@ -294,6 +296,12 @@
       <button data-act="mQueue" title="Sıradakiler">${I.queue}</button>`;
     sleepDraw();
     $(".p-head", now).appendChild(btns);
+    // denetimlerin altında: ses hangi cihazdan çıkıyor (Galaxy Buds2 gibi); app.js dvDraw doldurur
+    const out = document.createElement("button");
+    out.id = "mOut";
+    out.dataset.act = "openDevices";
+    now.appendChild(out);
+    dvDraw();
   };
 
   let touch = null;

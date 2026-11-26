@@ -3,60 +3,52 @@ package com.sound.app
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
-import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
-import android.net.ConnectivityManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.OpenableColumns
 import android.provider.Settings
+import android.util.Log
 import android.view.Gravity
 import android.view.View
-import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
-import android.webkit.JavascriptInterface
 import android.webkit.RenderProcessGoneDetail
-import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
-import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
-import androidx.core.content.pm.PackageInfoCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import com.chaquo.python.PyObject
 import com.chaquo.python.Python
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.Executors
 
-/** Tek ekran: masaüstü SOUND arayüzünü açan WebView. Arka ucu (Python) ve arayüzü birbirine bağlar. */
+/**
+ * Tek ekran: çalma motorunun (Engine: WebView + Python) arayüzünü gösterir. Motor ekrandan bağımsızdır; ekran kapanınca
+ * müzik sürer, uygulama kapalıyken kulaklık bağlanınca motor ekransız da başlayabilir.
+ */
 class MainActivity : ComponentActivity() {
-    private lateinit var web: WebView
     private lateinit var splash: View
-    private val apiPool = Executors.newCachedThreadPool()
-    private val backend: PyObject by lazy { Python.getInstance().getModule("android_main") }
     private var pendingApk: File? = null  // izin ekranından dönünce kurulacak güncelleme
     private lateinit var root: FrameLayout
     private var login: View? = null
     private var loginWeb: WebView? = null
-    @Volatile private var loginAddress = ""
+    @Volatile var loginAddress = ""
+        private set
 
     // Dosya seçici (Spotify verisiyle aktarma, çerez dosyası): Python'un iş parçacığı seçim bitene kadar bekler
     @Volatile private var pickWait: CountDownLatch? = null
@@ -69,7 +61,7 @@ class MainActivity : ComponentActivity() {
     }
 
     /** Seçilen dosyaları uygulamanın önbelleğine kopyalar (Python content:// okuyamaz), yolları JSON dizisi olarak döner. */
-    private fun pickFiles(multiple: Boolean): String {
+    fun pickFiles(multiple: Boolean): String {
         val latch = CountDownLatch(1)
         picked = emptyList()
         pickWait = latch
@@ -96,16 +88,12 @@ class MainActivity : ComponentActivity() {
             if (it.moveToFirst()) it.getString(0) else null
         }
 
-    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
-
-        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) WebView.setWebContentsDebuggingEnabled(true)
+        Python.getInstance()  // PyApplication başlattı; motor ilk kez burada da başlayabilir
 
         root = FrameLayout(this).apply { setBackgroundColor(BLACK) }
-        web = createWeb()
-        root.addView(web, FrameLayout.LayoutParams(-1, -1))
         splash = ImageView(this).apply {
             assets.open("logo.png").use { setImageBitmap(BitmapFactory.decodeStream(it)) }
             setBackgroundColor(BLACK)
@@ -126,59 +114,23 @@ class MainActivity : ComponentActivity() {
                 if (page.canGoBack()) page.goBack() else closeLogin(true)
                 return@addCallback
             }
+            val web = Engine.web
+            if (web == null) {
+                moveTaskToBack(true)
+                return@addCallback
+            }
             web.evaluateJavascript("window.soundBack ? soundBack() : false") { handled ->
                 if (handled != "true") moveTaskToBack(true)  // uygulama kapanmasın, müzik sürsün
             }
         }
         askNotificationPermission()
-        val data = filesDir.resolve("sound").absolutePath
-        apiPool.execute {
-            val url = backend.callAttr("start", data, Native()).toString()
-            runOnUiThread { web.loadUrl(url) }
-        }
+        Engine.start(this)
+        Engine.attach(this, root)
+        openTarget(intent)
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
-    private fun createWeb() = WebView(this).apply {
-        setBackgroundColor(BLACK)
-        settings.javaScriptEnabled = true
-        settings.domStorageEnabled = true
-        settings.mediaPlaybackRequiresUserGesture = false  // sıradaki şarkıya kendiliğinden geçebilsin
-        settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-        settings.allowFileAccess = false
-        setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)  // ekran kapalıyken de müzik sürsün
-        overScrollMode = View.OVER_SCROLL_NEVER
-        addJavascriptInterface(Native(), "SoundNative")
-        webViewClient = Client()
-        webChromeClient = object : WebChromeClient() {
-            override fun onConsoleMessage(m: ConsoleMessage): Boolean {
-                Log.i("SOUNDjs", "${m.message()} @${m.lineNumber()}")
-                return true
-            }
-        }
-    }
-
-    /** Arayüz süreci öldü (çoğunlukla bellek yetmedi): yalnızca WebView yenilenir, çalıyorsa şarkı kaldığı yerden sürer. */
-    private fun rebuildWeb(dead: WebView) {
-        if (dead !== web) return
-        val url = dead.url
-        val resume = PlaybackService.isPlaying
-        root.removeView(dead)
-        dead.destroy()
-        web = createWeb()
-        root.addView(web, 0, FrameLayout.LayoutParams(-1, -1))
-        if (url != null) web.loadUrl(url)
-        if (resume) resumePlayback(RESUME_TRIES)
-    }
-
-    /** Sayfa ve oturum yüklenene kadar saniyede bir dener. */
-    private fun resumePlayback(tries: Int) {
-        if (tries <= 0 || isDestroyed) return
-        web.postDelayed({
-            web.evaluateJavascript("window.soundResume ? soundResume() : false") { done ->
-                if (done != "true") resumePlayback(tries - 1)
-            }
-        }, 1000)
+    fun hideSplash() {
+        splash.visibility = View.GONE
     }
 
     /** Samsung gibi telefonlar pil tasarrufu için arka plandaki uygulamayı kapatabilir: ilk çalmada bir kez izin istenir. */
@@ -193,6 +145,25 @@ class MainActivity : ComponentActivity() {
         }.onFailure { Log.w("SOUND", "Pil izni ekranı açılamadı", it) }
     }
 
+    fun onPlayerState(state: JSONObject) {
+        if (!state.optBoolean("playing") || !hasWindowFocus()) return
+        askBatteryExemption()
+        askBluetoothPermission()
+    }
+
+    /**
+     * Uygulama kapalıyken Bluetooth kulaklığın bağlandığını duyabilmek için Android 12+ "Yakındaki cihazlar" izni gerekir.
+     * "Kulaklık bağlanınca çal" açıksa bir kez sorulur; verilmezse kulaklık yalnızca uygulama açıkken algılanır.
+     */
+    fun askBluetoothPermission() {
+        if (Build.VERSION.SDK_INT < 31 || !Prefs.headsetPlay(this)) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) return
+        val prefs = getSharedPreferences("sound", MODE_PRIVATE)
+        if (prefs.getBoolean("bluetooth_asked", false)) return
+        prefs.edit().putBoolean("bluetooth_asked", true).apply()
+        requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 2)
+    }
+
     private fun askNotificationPermission() {
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -202,7 +173,7 @@ class MainActivity : ComponentActivity() {
     /** Çalma durumu kaydedilsin; WebView bilerek duraklatılmıyor, müzik arka planda sürer. */
     override fun onStop() {
         super.onStop()
-        web.evaluateJavascript("window.soundSave && soundSave()", null)
+        Engine.evaluate("window.soundSave && soundSave()")
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -215,7 +186,7 @@ class MainActivity : ComponentActivity() {
     private fun openTarget(intent: Intent?) {
         val target = intent?.getStringExtra(SocialNotifier.EXTRA_TARGET) ?: return
         intent.removeExtra(SocialNotifier.EXTRA_TARGET)
-        apiPool.execute { runCatching { backend.callAttr("open_target", target) } }
+        Engine.pool.execute { runCatching { Python.getInstance().getModule("android_main").callAttr("open_target", target) } }
     }
 
     override fun onResume() {
@@ -227,20 +198,22 @@ class MainActivity : ComponentActivity() {
     }
 
     /** Sistemin yükleme ekranını açar. Bilinmeyen kaynak izni ilk seferde kullanıcıdan istenir. */
-    private fun install(apk: File) {
-        if (!packageManager.canRequestPackageInstalls()) {
-            pendingApk = apk
-            startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
-            return
-        }
-        val uri = FileProvider.getUriForFile(this, "$packageName.files", apk)
-        startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+    fun install(apk: File) {
+        runCatching {
+            if (!packageManager.canRequestPackageInstalls()) {
+                pendingApk = apk
+                startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+                return
+            }
+            val uri = FileProvider.getUriForFile(this, "$packageName.files", apk)
+            startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+        }.onFailure { Log.e("SOUND", "Güncelleme açılamadı", it) }
     }
 
     /** Google girişi: ayrı bir WebView. Yalnızca oturum çerezleri okunur, parola uygulamaya hiç gelmez. */
     @SuppressLint("SetJavaScriptEnabled")
-    private fun showLogin(url: String) {
+    fun showLogin(url: String) {
         closeLogin(false)
         val page = WebView(this).apply {
             settings.javaScriptEnabled = true
@@ -284,104 +257,29 @@ class MainActivity : ComponentActivity() {
         page.loadUrl(url)
     }
 
-    private fun closeLogin(notify: Boolean) {
+    fun closeLogin(notify: Boolean) {
         val screen = login ?: return
         root.removeView(screen)
         loginWeb?.destroy()
         login = null
         loginWeb = null
         loginAddress = ""
-        if (notify) apiPool.execute { runCatching { backend.callAttr("login_closed") } }
+        if (notify) Engine.pool.execute { runCatching { Python.getInstance().getModule("android_main").callAttr("login_closed") } }
     }
 
     override fun onDestroy() {
-        stopService(Intent(this, PlaybackService::class.java))
-        web.destroy()
+        closeLogin(false)
+        Engine.detach(this)
+        // ekran kapandı ama müzik çalıyorsa motor ekransız sürer; çalmıyorsa her şey kapanır (eski davranış)
+        if (!isChangingConfigurations && !PlaybackService.isPlaying) {
+            Engine.shutdown()
+            stopService(Intent(this, PlaybackService::class.java))
+        }
         super.onDestroy()
-    }
-
-    private inner class Client : WebViewClient() {
-        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-            if (request.url.host == "127.0.0.1") return false
-            runCatching { startActivity(Intent(Intent.ACTION_VIEW, request.url)) }  // dış bağlantılar tarayıcıda
-            return true
-        }
-
-        override fun onPageFinished(view: WebView, url: String) {
-            splash.visibility = View.GONE
-        }
-
-        override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
-            rebuildWeb(view)
-            return true
-        }
-    }
-
-    /** JavaScript ve Python'un çağırdığı köprü. */
-    inner class Native {
-        @JavascriptInterface
-        fun call(id: Int, method: String, args: String) {
-            apiPool.execute {
-                val result = runCatching { backend.callAttr("call", method, args).toString() }
-                    .getOrElse { JSONObject().put("error", it.message ?: "Hata").toString() }
-                evaluateJs("__soundDone($id,$result)")
-            }
-        }
-
-        fun openUrl(url: String) {
-            runOnUiThread { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } }
-        }
-
-        fun openLogin(url: String) {
-            runOnUiThread { showLogin(url) }
-        }
-
-        fun loginUrl(): String = loginAddress
-
-        fun loginCookies(): String? = CookieManager.getInstance().getCookie("https://music.youtube.com")
-
-        fun closeLogin() {
-            runOnUiThread { this@MainActivity.closeLogin(false) }
-        }
-
-        fun clearLogin() {
-            CookieManager.getInstance().removeAllCookies(null)
-        }
-
-        fun evaluateJs(code: String) {
-            runOnUiThread { if (!isDestroyed) web.evaluateJavascript(code, null) }
-        }
-
-        fun versionCode(): Long = PackageInfoCompat.getLongVersionCode(packageManager.getPackageInfo(packageName, 0))
-
-        fun versionName(): String = packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
-
-        fun isMetered(): Boolean = getSystemService(ConnectivityManager::class.java).isActiveNetworkMetered
-
-        fun installApk(path: String) {
-            runOnUiThread { runCatching { install(File(path)) }.onFailure { Log.e("SOUND", "Güncelleme açılamadı", it) } }
-        }
-
-        fun pickFiles(multiple: Boolean): String = this@MainActivity.pickFiles(multiple)
-
-        /** Yeni mesaj, arkadaşlık isteği, ortak dinleme daveti. Dokununca uygulama açılır ve hedef gösterilir. */
-        fun notify(title: String, body: String, target: String) {
-            runOnUiThread { SocialNotifier.show(this@MainActivity, title, body, target) }
-        }
-
-        fun playerState(json: String) {
-            runOnUiThread {
-                if (isDestroyed) return@runOnUiThread
-                val state = JSONObject(json)
-                PlaybackService.update(this@MainActivity, state, web.url)
-                if (state.optBoolean("playing") && hasWindowFocus()) askBatteryExemption()
-            }
-        }
     }
 
     private companion object {
         const val BLACK = 0xFF000000.toInt()
         const val WHITE = 0xFFFFFFFF.toInt()
-        const val RESUME_TRIES = 30
     }
 }

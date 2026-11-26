@@ -31,12 +31,12 @@ val syncSound by tasks.registering(Sync::class) {
                     .replace("Arama sonuçlarından bir şarkıyı sürükleyip soldaki albüme bırak ya da ⋯ › Albüme ekle'yi kullan.", "Bir şarkının ⋯ menüsünden Albüme ekle'yi kullan.")
                     .replace("♡ simgesine tıkla", "♡ simgesine dokun")
                     .replace("indirme simgesine tıkla", "⋯ menüsünden indir")
-                    .replace("<b>Spotify bağlantı ya da dosya</b>", "<b>Spotify liste bağlantısı</b>")
+                    .replace("row(\"Spotify bağlantı ya da dosya\"", "row(\"Spotify liste bağlantısı\"")
                     .replace("Premium gerekmez: liste bağlantıları ya da hesap verisi dosyanla aktarılır.", "Premium gerekmez: liste bağlantılarını yapıştırarak aktarılır.")
                     .replace("Giriş penceresi açıldı; giriş yapınca aktarma kendiliğinden başlar", "Google hesabınla giriş yap; aktarma kendiliğinden başlar")
                     .replace("Spotify giriş penceresi açıldı; izin verince aktarma kendiliğinden başlar", "Spotify tarayıcıda açıldı; izin verdikten sonra SOUND'a geri dön")
                     .replace("GitHub'da yeni sürüm çıkınca SOUND kendini arka planda günceller; yeniden başlatınca etkin olur.", "Yeni sürüm Wi-Fi'da kendiliğinden iner, yüklemeden önce onayını ister. Mobil veride yalnızca Şimdi denetle düğmesiyle iner (yaklaşık 60 MB). Kitaplığın silinmez.")
-                    .replace("data-x=\"restart\">Yeniden başlat<", "data-x=\"restart\">Yükle<")
+                    .replace("btn(\"restart\", \"Yeniden başlat\"", "btn(\"restart\", \"Yükle\"")
                     .replace("\"Denetleniyor…\"", "\"Denetleniyor ve indiriliyor…\"")
             }
         }
@@ -61,8 +61,8 @@ android {
         applicationId = "com.sound.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "0.1.12"
+        versionCode = 14
+        versionName = "0.1.13"
         // armeabi-v7a: 64 bit işlemcili olsa da 32 bit Android kullanan telefonlar (çoğu uygun fiyatlı Samsung) için
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
@@ -116,4 +116,6 @@ dependencies {
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.activity:activity-ktx:1.11.0")
     implementation("androidx.media:media:1.7.1")
+    implementation("com.google.android.gms:play-services-wearable:19.0.0")  // Galaxy Watch uygulaması (WatchLink)
+    implementation("androidx.fragment:fragment-ktx:1.8.5")  // play-services eski Fragment getiriyor; izin/sonuç API'leri en az 1.3 ister
 }

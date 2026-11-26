@@ -254,15 +254,114 @@ def start(data_dir, native):
     original = _backend.player_state
 
     def player_state(state):
+        global _last_state
         original(state)
-        native.playerState(json.dumps(state, ensure_ascii=False))
+        _last_state = state
+        native.playerState(json.dumps(_with_watch_fields(state), ensure_ascii=False))
     _backend.player_state = player_state
+    _backend.lib.subscribe(_library_changed)  # saat: beğeni değişince kalp, kitaplık değişince listeler
     # sistem bildirimi: masaüstündeki tepsi baloncuğu yerine Android bildirimi (MainActivity.Native.notify)
     _backend.notify = lambda title, body, target="": native.notify(str(title)[:60], str(body)[:250], str(target)[:80]) or True
+    _patch_audio(native, _backend)
     # yt_dlp arayüz açılırken arka planda yüklenir; ilk arama/çalma onu beklemesin diye hemen başlıyor
     threading.Thread(target=updater.warm, daemon=True, name="ytdlp-warm").start()
     threading.Timer(30, updater.verify).start()
     return mediaserver.start() + "/index.html"
+
+
+def _patch_audio(native, backend):
+    """Ses çıkışları ve kulaklık ayarları Kotlin'de (AudioOutputs, Prefs): uygulama kapalıyken de bilinmeli."""
+    _api.audio_outputs = lambda: json.loads(str(native.audioOutputs()))
+    _api.audio_output_select = lambda device_id="": json.loads(str(native.selectOutput(str(device_id or ""))))
+    _api.audio_output_more = lambda: bool(native.bluetoothSettings())
+
+    def sync():
+        settings = backend.lib.settings
+        native.headsetPrefs(settings.get("headset_play", True) is not False, settings.get("headset_pause", True) is not False)
+
+    original = _api.update_settings
+
+    def update_settings(changes):
+        result = original(changes)
+        if "headset_play" in changes or "headset_pause" in changes:
+            sync()
+        return result
+    _api.update_settings = update_settings
+    sync()
+
+
+# ---------- Galaxy Watch (WatchLink.kt / WatchService) ----------
+
+_last_state = None
+_lists_timer = None
+
+
+def _with_watch_fields(state):
+    """Çalma durumuna saatin istediği alanlar: beğenildi mi, ses düzeyi, vurgu rengi."""
+    out = dict(state or {})
+    track = out.get("track") or {}
+    try:
+        out["liked"] = bool(track.get("id")) and _backend.lib.is_favorite(track["id"])
+        out["volume"] = _backend.lib.volume
+        out["accent"] = (_backend.lib.settings.get("ui") or {}).get("accent") or "#8b5cf6"
+    except Exception:
+        pass
+    return out
+
+
+def _library_changed():
+    global _lists_timer
+    if _last_state and _last_state.get("track"):
+        _native().playerState(json.dumps(_with_watch_fields(_last_state), ensure_ascii=False))
+    if _lists_timer:
+        _lists_timer.cancel()
+    _lists_timer = threading.Timer(3, watch_lists_now)
+    _lists_timer.daemon = True
+    _lists_timer.start()
+
+
+def _native():
+    return _backend.window.bridge
+
+
+def watch_lists():
+    """Saatteki Kitaplık ekranı: favoriler, mixler, albümler."""
+    lib = _backend.lib
+    mixes = []
+    cache = lib.data.get("mixes") or {}
+    for mix in list(cache.get("daily") or []) + [m for m in (cache.get("weekly"), cache.get("radar")) if m]:
+        mixes.append({"key": mix["key"], "title": mix["title"], "sub": mix.get("subtitle", ""), "count": len(mix.get("tracks") or [])})
+    albums = sorted(lib.data["albums"].items(), key=lambda kv: kv[1].get("created") or 0, reverse=True)
+    return {
+        "favorites": len(lib.data["favorites"]),
+        "mixes": mixes,
+        "albums": [{"id": album_id, "title": album["name"], "count": len(album["tracks"])} for album_id, album in albums[:40]],
+        "recent": [{"id": t["id"], "title": t["title"], "artist": t["artist"]} for t in lib.recent_tracks(12)],
+        "at": time.time(),
+    }
+
+
+def watch_lists_now():
+    if _backend:
+        try:
+            _native().watchLists(json.dumps(watch_lists(), ensure_ascii=False))
+        except Exception:
+            traceback.print_exc(file=sys.stderr)
+
+
+def watch_play(data_json):
+    """Saatteki Kitaplık ekranından bir şey seçildi: arayüz çalar (app.js "watch_play")."""
+    if _backend:
+        try:
+            _backend.push("watch_play", json.loads(data_json))
+        except ValueError:
+            pass
+
+
+def audio_changed(state_json):
+    """Kulaklık bağlandı / çıktı (AudioOutputs.watch): arayüz güncellensin."""
+    if _backend:
+        _backend.push("audioout", json.loads(state_json))
 
 
 def call(method, args_json):

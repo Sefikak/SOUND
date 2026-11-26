@@ -1,13 +1,14 @@
 {
-  "versionCode": 13,
-  "versionName": "0.1.12",
-  "sha256": "dc3be164580500cf7d37ffa21f52ae114eee50a2729c395219329814776fd752",
-  "url": "https://github.com/Sefikak/SOUND/raw/android-0.1.12/SOUND-android-0.1.12.apk",
+  "versionCode": 14,
+  "versionName": "0.1.13",
+  "sha256": "53d08431fa9d3552ea96f3f376d5b3512e4eb1767f7216cd3c34c6f62f722541",
+  "url": "https://github.com/Sefikak/SOUND/raw/android-0.1.13/SOUND-android-0.1.13.apk",
   "notes": [
-    "Albüm kapağını değiştir: şarkılardan seç ya da resim yükle",
-    "Sözler artık çalan satırı doğru takip ediyor",
-    "Gruplar, Birlikte dinle daveti, arkadaşlık istekleri düğmesi",
-    "Uyku zamanlayıcısı, bildirimler, Sanatçı Mix'te Popülerler",
-    "Eşitleme artık sürekli internet kullanmıyor"
+    "Akıllı sıra: aramadan ve ana sayfadan çalınca benzer şarkılar",
+    "Günlük Mix, Haftalık Keşif, Yeni Çıkanlar",
+    "Beğenmedim düğmesi, yavaş geçiş",
+    "Kulaklık bağlanınca uygulama kapalıyken de çalar, ses çıkışı seçimi",
+    "Açık temalar, tema eşitleme, yeni Ayarlar",
+    "Galaxy Watch uygulaması"
   ]
 }

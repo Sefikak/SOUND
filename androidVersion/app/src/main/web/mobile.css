@@ -6,7 +6,7 @@ html.mobile #main { flex: 1 1 0; min-height: 0; border-radius: 0; order: 1; }
 html.mobile ::-webkit-scrollbar { display: none; }
 
 /* alt sekmeler */
-#mTabs { order: 3; flex: none; display: grid; grid-template-columns: repeat(3, 1fr); height: var(--tabs-h); background: #000; }
+#mTabs { order: 3; flex: none; display: grid; grid-template-columns: repeat(3, 1fr); height: var(--tabs-h); background: var(--black); }
 #mTabs button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: var(--muted); font-size: 11px; font-weight: 600; }
 #mTabs button svg { width: 23px; height: 23px; }
 #mTabs button.on { color: var(--text); }
@@ -14,7 +14,7 @@ html.mobile ::-webkit-scrollbar { display: none; }
 
 /* kitaplık: kenar çubuğu tam ekran açılır */
 html.mobile #side { display: none; }
-html.mobile body.m-lib #side { display: flex; position: fixed; z-index: 30; inset: 0 0 calc(var(--tabs-h) + var(--bar-h)) 0; padding: 8px; background: #000; width: auto; }
+html.mobile body.m-lib #side { display: flex; position: fixed; z-index: 30; inset: 0 0 calc(var(--tabs-h) + var(--bar-h)) 0; padding: 8px; background: var(--black); width: auto; }
 html.mobile #side .lib { flex: 1 1 0; min-height: 0; }
 
 /* küçük çalar */
@@ -109,21 +109,21 @@ html.mobile #updateBox { left: 12px; right: 12px; width: auto; bottom: 150px; }
 html.mobile { --bar-h: 70px; --m-tint: #3b2470; }
 html.mobile.m-idle { --bar-h: 0px; }
 html.mobile.m-idle #bar { display: none; }
-html.mobile body, html.mobile #app, html.mobile #main { background: #000; }
+html.mobile body, html.mobile #app, html.mobile #main { background: var(--black); }
 html.mobile .m-anim { transition: transform .2s ease-out, opacity .2s ease-out; }
 
 /* sekmeler */
-#mTabs { background: #000; }
+#mTabs { background: var(--black); }
 #mTabs button { color: #9a9a9a; font-size: 10.5px; font-weight: 500; }
-#mTabs button.on { color: #fff; font-weight: 700; }
-#mTabs button.on svg { color: #fff; fill: #ffffff22; }
+#mTabs button.on { color: var(--text); font-weight: 700; }
+#mTabs button.on svg { color: var(--text); fill: rgb(var(--ink) / 13%); }
 
 /* ana sayfa */
 html.mobile body.m-home #backBtn { display: none; }
 .m-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 0 14px; }
 .m-head h1 { font-size: 24px; font-weight: 800; letter-spacing: -.4px; }
 html.mobile .quick { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-gap: 8px; gap: 8px; }
-html.mobile .q { height: 56px; border-radius: 6px; background: #ffffff17; overflow: hidden; }
+html.mobile .q { height: 56px; border-radius: 6px; background: rgb(var(--ink) / 9%); overflow: hidden; }
 html.mobile .q > img, html.mobile .q > .tile { width: 56px; height: 56px; box-shadow: none; margin-right: 10px; }
 html.mobile .q { gap: 0; }
 html.mobile .q b { padding-right: 8px; font-size: 12.5px; line-height: 1.25; }
@@ -155,18 +155,18 @@ html.mobile .row .a { font-size: 12.5px; }
 html.mobile #bar { height: 64px; margin: 0 8px 6px; padding: 8px; border-radius: 10px; overflow: hidden; touch-action: none;
   background: linear-gradient(#00000059, #00000059), var(--m-tint); transition: background .5s; }
 html.mobile #bar .np img { width: 48px; height: 48px; border-radius: 5px; }
-html.mobile #bar .np .t { font-size: 13.5px; font-weight: 700; color: #fff; }
-html.mobile #bar .np .a { font-size: 12px; color: #ffffffbf; }
-html.mobile #bar .np .rb.heart { display: grid; place-items: center; flex: none; width: 40px; height: 44px; opacity: 1; color: #fff; }
+html.mobile #bar .np .t { font-size: 13.5px; font-weight: 700; color: var(--text); }
+html.mobile #bar .np .a { font-size: 12px; color: rgb(var(--ink) / 75%); }
+html.mobile #bar .np .rb.heart { display: grid; place-items: center; flex: none; width: 40px; height: 44px; opacity: 1; color: var(--text); }
 html.mobile #bar .np .rb.heart svg { width: 22px; height: 22px; }
 html.mobile #bar .np .rb.heart.on { color: var(--accent-light); }
-html.mobile #bar .pp { width: 42px; height: 42px; background: none; color: #fff; box-shadow: none; }
+html.mobile #bar .pp { width: 42px; height: 42px; background: none; color: var(--text); box-shadow: none; }
 html.mobile #bar .pp svg { width: 26px; height: 26px; }
 html.mobile #bar #nextBtn { display: none; }
-#mProg { left: 8px; right: auto; top: auto; bottom: 0; height: 2px; background: #fff; border-radius: 2px; max-width: calc(100% - 16px); }
+#mProg { left: 8px; right: auto; top: auto; bottom: 0; height: 2px; background: var(--text); border-radius: 2px; max-width: calc(100% - 16px); }
 
 /* tam ekran çalar */
-html.mobile #app.panel-open #panel { background: linear-gradient(180deg, var(--m-tint) 0%, #121212 72%); animation: m-up .22s ease-out; }
+html.mobile #app.panel-open #panel { background: linear-gradient(180deg, var(--m-tint) 0%, var(--bg) 72%); animation: m-up .22s ease-out; }
 html.mobile #app.panel-open #panel .inner { padding: 0 22px 20px; background: none; }
 html.mobile #panel .p-head { position: static; background: none; padding: 12px 0 14px; }
 html.mobile #panel .p-head .grow { order: 1; text-align: center; font-size: 13px; font-weight: 600; }
@@ -177,15 +177,15 @@ html.mobile #panel .p-head .seg button { padding: 4px 9px; font-size: 11.5px; }
 html.mobile #panel .p-media { border-radius: 8px; box-shadow: 0 14px 36px #00000080; }
 html.mobile #panel .p-title { margin: 20px 0 10px; }
 html.mobile #panel .p-title .t { font-size: 21px; }
-html.mobile #app.panel-open #bar { margin: 0; border-radius: 0; overflow: visible; background: #121212; animation: m-up .22s ease-out; }
+html.mobile #app.panel-open #bar { margin: 0; border-radius: 0; overflow: visible; background: var(--bg); animation: m-up .22s ease-out; }
 html.mobile #app.panel-open #bar #nextBtn { display: grid; }
-html.mobile #app.panel-open #bar .pp { background: #fff; color: #000; }
+html.mobile #app.panel-open #bar .pp { background: var(--text); color: var(--bg); }
 html.mobile #app.panel-open #bar .pp svg { width: 28px; height: 28px; }
 @keyframes m-up { from { transform: translateY(100%); } to { transform: none; } }
 
 /* kitaplık */
 html.mobile #nav a[data-page="home"], html.mobile #nav a[data-page="search"] { display: none; }
-html.mobile body.m-lib #side { background: #000; padding: 8px 10px; }
+html.mobile body.m-lib #side { background: var(--black); padding: 8px 10px; }
 html.mobile #side .box { background: none; }
 html.mobile #side .li img, html.mobile #side .li .tile { border-radius: 4px; }
 html.mobile #updateBox { bottom: 146px; }
@@ -201,7 +201,7 @@ html.mobile .home-page .list { margin: 0 -14px; padding: 0; }
 html.mobile .row { margin: 0; width: auto; }
 html.mobile #bar .np .tt { flex: 1 1 0; min-width: 0; padding: 0; }
 html.mobile .card.circle .cfoot span { text-align: center; }
-html.mobile #panel .p-head [data-act="closePanel"] { color: #fff; }
+html.mobile #panel .p-head [data-act="closePanel"] { color: var(--text); }
 
 /* Chrome 87 öncesi WebView "inset" bilmez: konumlar ayrıca yazılır, yoksa panel ve kitaplık yüksekliğini sınırlayamaz */
 html.mobile body.m-lib #side { top: 0; left: 0; right: 0; bottom: calc(var(--tabs-h) + var(--bar-h)); }
@@ -221,7 +221,7 @@ html.mobile #app.panel-open #panel .inner { overflow-x: hidden; padding-bottom: 
 #mNow .ctrl::before, #mNow .ctrl::after { display: none; }
 #mNow .ib { display: grid; width: 44px; height: 44px; }
 #mNow .ib svg { width: 22px; height: 22px; }
-#mNow .pp { width: 60px; height: 60px; background: #fff; color: #000; }
+#mNow .pp { width: 60px; height: 60px; background: var(--text); color: var(--bg); }
 #mNow .pp svg { width: 28px; height: 28px; }
 #mNow .prog { display: flex; align-items: flex-end; height: 72px; margin: 0; }
 #mNow .prog span { width: 38px; font-size: 12px; }
@@ -267,7 +267,7 @@ html.mobile #nav a[data-page="favorites"], html.mobile #nav a[data-page="downloa
 html.mobile #nav a[data-page="favorites"] { background: linear-gradient(135deg, var(--accent-dark), var(--accent-light)); }
 html.mobile #nav a[data-page="downloads"] { background: linear-gradient(135deg, #0b5e57, #18a999); }
 html.mobile #nav a svg { color: #fff; width: 26px; height: 26px; margin: 0 0 auto; }
-html.mobile #nav .m-n { font-size: 11.5px; font-weight: 500; color: #ffffffcc; }
+html.mobile #nav .m-n { font-size: 11.5px; font-weight: 500; color: rgb(var(--ink) / 80%); }
 html.mobile #nav a[data-page="stats"] .m-n { display: none; }
 html.mobile .lib { display: block; }
 html.mobile .lib-head { padding: 16px 2px 8px; font-size: 18px; font-weight: 800; color: var(--text); }
@@ -285,27 +285,27 @@ html.mobile #libList .empty-lib, html.mobile #libList .folder-empty { grid-colum
 html.mobile #app.panel-open #panel { background: linear-gradient(180deg, #00000038 0%, #0000005c 42%, var(--bg) 88%), var(--m-art, none) center / cover no-repeat, var(--m-tint); }
 html.mobile #app.panel-open #panel .inner { padding: 0 24px 24px; }
 html.mobile #panel .p-head { padding: 10px 0 16px; }
-html.mobile #panel .p-head .grow { font-size: 12px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: #ffffffd9; }
+html.mobile #panel .p-head .grow { font-size: 12px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: rgb(var(--ink) / 85%); }
 html.mobile #panel .p-head .seg { background: #00000040; }
-html.mobile #panel .p-head .seg button.on { background: #ffffff33; color: #fff; }
+html.mobile #panel .p-head .seg button.on { background: rgb(var(--ink) / 20%); color: var(--text); }
 html.mobile #panel .p-media { border-radius: 14px; box-shadow: 0 22px 50px #00000099, 0 2px 8px #00000066; }
 html.mobile #panel .p-title { align-items: center; margin: 24px 0 6px; }
-html.mobile #panel .p-title .t { font-size: 22px; font-weight: 800; color: #fff; }
-html.mobile #panel .p-title .a { font-size: 14.5px; color: #ffffffb3; }
-html.mobile #panel .p-title .rb { flex: none; width: 42px; height: 42px; color: #ffffffd9; }
+html.mobile #panel .p-title .t { font-size: 22px; font-weight: 800; color: var(--text); }
+html.mobile #panel .p-title .a { font-size: 14.5px; color: rgb(var(--ink) / 70%); }
+html.mobile #panel .p-title .rb { flex: none; width: 42px; height: 42px; color: rgb(var(--ink) / 85%); }
 html.mobile #panel .p-title .rb svg { width: 26px; height: 26px; }
 html.mobile #panel .p-title .rb.done, html.mobile #panel .p-title .rb.heart.on { color: var(--accent-light); }
 html.mobile #panel .p-title .ring { width: 24px; height: 24px; --ring-bg: transparent; }
 #pDl { display: none; }
 #mNow .center { padding-top: 6px; }
 #mNow .prog { height: 78px; }
-#mNow .prog span { color: #ffffffb3; font-variant-numeric: tabular-nums; }
-#mNow .ib { color: #ffffffd9; }
+#mNow .prog span { color: rgb(var(--ink) / 70%); font-variant-numeric: tabular-nums; }
+#mNow .ib { color: rgb(var(--ink) / 85%); }
 #mNow .ib.on { color: var(--accent-light); }
 #mNow .ctrl { margin-top: 8px; }
 #mNow .pp { width: 66px; height: 66px; box-shadow: 0 8px 24px #00000066; }
 #mNow #prevBtn svg, #mNow #nextBtn svg { width: 30px; height: 30px; }
-html.mobile #panel .p-card { background: #ffffff12; border-radius: 14px; }
+html.mobile #panel .p-card { background: rgb(var(--ink) / 7%); border-radius: 14px; }
 #pLyrics { margin-top: 16px; }
 
 /* parlak kapaklarda da yazı okunsun; kitaplıkta logo küçük */
@@ -315,7 +315,7 @@ html.mobile #side .brand img, html.mobile #side .brand .logo-tint { height: 28px
 
 /* ortak dinleme: odadayken küçük çaların üstünde kod ve kişi sayısı */
 #mListen { position: absolute; right: 10px; bottom: calc(100% + 6px); display: none; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: 99px;
-  background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; }
+  background: var(--accent); color: var(--on-accent); font-size: 12px; font-weight: 700; }
 #mListen svg { width: 15px; height: 15px; }
 #mListen.show { display: inline-flex; }
 .m-head-btns { display: flex; align-items: center; gap: 8px; }
@@ -325,7 +325,7 @@ html.mobile #side .brand img, html.mobile #side .brand .logo-tint { height: 28px
 html.mobile #dvChip { right: 10px; max-width: calc(100vw - 20px); }
 html.mobile #app.panel-open #dvChip { display: none; }
 .m-pbtns { order: 3; display: flex; align-items: center; margin-right: -8px; }
-.m-pbtns button { display: grid; place-items: center; width: 34px; height: 36px; color: #fff; }
+.m-pbtns button { display: grid; place-items: center; width: 34px; height: 36px; color: var(--text); }
 .m-pbtns button.on { color: var(--accent-light); }
 .m-pbtns svg { width: 21px; height: 21px; }
 
@@ -356,3 +356,16 @@ html.mobile #panel .p-title .rb { width: 38px; }
 /* sözler: kutu ekrana göre büyür; çalan satır ortada kalsın diye yeterli yükseklik */
 html.mobile .lyrics .lines { max-height: min(52vh, 460px); }
 html.mobile .lyrics .lines p { font-size: 19px; padding: 6px 0; }
+
+/* tam ekran çalarda ses çıkışı satırı (Galaxy Buds2 gibi); dokununca çıkış / cihaz seçimi */
+html.mobile .qrow .rb { opacity: .75; }
+/* küçük çalar ve tam ekran çalar kapağın renginde: açık temada da koyu renkler */
+html.mobile #bar, html.mobile #app.panel-open #panel { --text: #fff; --sub: #d0d0d0; --muted: #9a9a9a; --ink: 255 255 255; --meta: #e2e2e2; color: var(--text); }
+html.mobile #app.panel-open #panel, html.mobile #app.panel-open #bar { --bg: #121212; }
+html.mobile body.light #bar .np .a { color: #ddd; }
+html.mobile .mix-art.big { width: 180px; height: 180px; }
+#mOut { order: 4; display: none; align-items: center; justify-content: center; gap: 7px; margin: 10px auto 0; padding: 6px 12px; border-radius: 99px;
+  color: var(--sub); font-size: 13px; font-weight: 600; max-width: 90%; }
+#mOut.head { display: flex; color: #5fe39b; }
+#mOut svg { flex: none; width: 16px; height: 16px; }
+#mOut span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -6,4 +6,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "SOUND"
-include(":app")
+include(":app", ":wear")  // wear: Galaxy Watch uygulaması (telefondaki SOUND'u kumanda eder)

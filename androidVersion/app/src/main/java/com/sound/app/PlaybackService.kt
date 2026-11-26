@@ -4,11 +4,15 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.AudioManager
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Handler
@@ -34,6 +38,9 @@ import kotlin.concurrent.thread
  *
  * Android 12'den beri arka plandaki uygulama ön plan hizmetini yeniden başlatamaz. Bu yüzden hizmet şarkı aralarında ve
  * kısa duraklamalarda ön planda kalır; yalnızca uzun duraklamadan sonra ön plandan çıkar.
+ *
+ * Uygulama kapalıyken kulaklık bağlanınca (HeadsetReceiver) ya da kulaklığın çal düğmesine basılınca (MediaKeyReceiver)
+ * hizmet motoru (Engine) ekransız başlatır ve son şarkıyı kaldığı yerden çalar.
  */
 class PlaybackService : Service() {
     private lateinit var session: MediaSessionCompat
@@ -56,6 +63,13 @@ class PlaybackService : Service() {
     }
     private val releaseLocks = Runnable { setLocks(false) }
 
+    /** Kulaklık çıkarıldı / bağlantısı koptu: müzik hoparlörden çalmasın. */
+    private val noisy = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY && playing && Prefs.headsetPause(context)) send("pause")
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -77,12 +91,23 @@ class PlaybackService : Service() {
                 override fun onSkipToNext() = send("next")
                 override fun onSkipToPrevious() = send("previous")
             })
+            // uygulama kapatıldıktan sonra kulaklık düğmesi bize gelsin (MediaKeyReceiver motoru başlatır)
+            val keys = Intent(Intent.ACTION_MEDIA_BUTTON).setComponent(ComponentName(this@PlaybackService, MediaKeyReceiver::class.java))
+            // sistem tuş bilgisini (EXTRA_KEY_EVENT) niyete ekler: değiştirilebilir olmalı
+            val mutable = if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0
+            setMediaButtonReceiver(PendingIntent.getBroadcast(this@PlaybackService, 0, keys, mutable or PendingIntent.FLAG_UPDATE_CURRENT))
             isActive = true
         }
+        ContextCompat.registerReceiver(this, noisy, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY), ContextCompat.RECEIVER_NOT_EXPORTED)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         released = false  // bu çağrıdan sonra ön plana geçmek zorunlu ve izinli
+        if (intent?.getBooleanExtra(EXTRA_BOOT, false) == true) {
+            show()  // ön plana hemen geçilmeli (5 sn sınırı)
+            boot(intent.getStringExtra(EXTRA_ACTION) ?: "play")
+            return START_NOT_STICKY
+        }
         intent?.getStringExtra(EXTRA_ACTION)?.let { send(it) }
         if (intent != null && intent.hasExtra(EXTRA_PLAYING)) {
             applyState(
@@ -94,6 +119,38 @@ class PlaybackService : Service() {
             )
         } else show()
         return START_NOT_STICKY
+    }
+
+    /** Kulaklık bağlandı ya da kulaklık düğmesine basıldı; uygulama kapalı olabilir. */
+    private fun boot(action: String) {
+        val wasRunning = Engine.running && Engine.loaded
+        if (wasRunning && action != "headset") { send(action); return }
+        Engine.start(this)
+        if (action == "headset") {
+            if (!wasRunning) { title = "SOUND"; artist = "Kulaklık bağlandı"; show() }
+            // ACL bağlantısı ses yolundan önce gelir: ses kulaklığa geçmeden çalarsa hoparlörden duyulur
+            waitForHeadset(HEADSET_WAIT_STEPS) { ready -> if (ready) Engine.resume { ok -> if (!ok) giveUp() } else giveUp() }
+        } else {
+            Engine.resume { ok -> if (!ok) giveUp() }
+        }
+    }
+
+    private fun waitForHeadset(steps: Int, done: (Boolean) -> Unit) {
+        if (AudioOutputs.hasHeadset(this)) { main.postDelayed({ done(true) }, 800); return }
+        if (steps <= 0) { done(false); return }
+        main.postDelayed({ if (!destroyed) waitForHeadset(steps - 1, done) }, 500)
+    }
+
+    /** Çalınacak şarkı yok ya da kulaklık sese hiç bağlanmadı: ekran da kapalıysa her şey kapanır. */
+    private fun giveUp() {
+        if (destroyed || playing) return
+        if (Engine.activity == null) {
+            Engine.shutdown()
+            stopSelf()
+        } else {
+            title = "SOUND"; artist = ""
+            main.post(releaseForeground)
+        }
     }
 
     private fun applyState(playing: Boolean, title: String, artist: String, id: String?, base: String?) {
@@ -206,6 +263,7 @@ class PlaybackService : Service() {
                 if (!destroyed && id == trackId) {
                     art = bitmap
                     show()
+                    WatchLink.publishArt(this, id, bitmap)  // saatteki çalan şarkı ekranı
                 }
             }
         }
@@ -219,7 +277,9 @@ class PlaybackService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        stopSelf()  // kullanıcı uygulamayı son uygulamalardan kapattı: ses WebView ile birlikte durur
+        // kullanıcı uygulamayı son uygulamalardan kapattı: ses motorla birlikte durur
+        Engine.shutdown()
+        stopSelf()
     }
 
     override fun onDestroy() {
@@ -227,6 +287,7 @@ class PlaybackService : Service() {
         instance = null
         main.removeCallbacksAndMessages(null)
         setLocks(false)
+        runCatching { unregisterReceiver(noisy) }
         session.release()
         super.onDestroy()
     }
@@ -242,6 +303,8 @@ class PlaybackService : Service() {
         private const val EXTRA_ARTIST = "artist"
         private const val EXTRA_ID = "id"
         private const val EXTRA_BASE = "base"
+        private const val EXTRA_BOOT = "boot"
+        private const val HEADSET_WAIT_STEPS = 30  // 15 sn
         private const val ART_SIZE = 512
         private const val LOCK_GRACE_MS = 30_000L
         private const val FOREGROUND_GRACE_MS = 10 * 60_000L
@@ -249,6 +312,13 @@ class PlaybackService : Service() {
 
         /** Arayüz süreci ölürse çalmanın sürdürülüp sürdürülmeyeceğini söyler. */
         val isPlaying: Boolean get() = instance?.playing == true
+
+        /** Kulaklık bağlandı / kulaklık düğmesi: uygulama kapalı olsa da hizmeti başlatır (sistem bu durumlarda izin verir). */
+        fun command(context: Context, action: String) {
+            val intent = Intent(context, PlaybackService::class.java).putExtra(EXTRA_ACTION, action).putExtra(EXTRA_BOOT, true)
+            runCatching { ContextCompat.startForegroundService(context, intent) }
+                .onFailure { Log.w("SOUND", "Çalma hizmeti başlatılamadı ($action)", it) }
+        }
 
         /** Arayüzdeki çalma durumu değişti. Hizmet ilk çalmada başlar, sonra doğrudan güncellenir (ana iş parçacığında çağrılır). */
         fun update(context: Context, state: JSONObject, pageUrl: String?) {

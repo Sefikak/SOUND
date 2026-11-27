@@ -87,6 +87,48 @@ Saate kurmak (Play Store'da olmadığı için elle):
 - Dinleme istatistikleri: süre, en çok dinlenen şarkı ve sanatçılar, günlere ve saatlere göre dağılım
 - Kişiselleştirme: vurgu rengi, tema, yerleşim, arayüz boyutu
 
+## Şarkılarını YouTube Music ve Spotify'dan aktar
+
+Aktarma ekranı: **Ayarlar → Kitaplık ve depolama → İçe aktar**. Beğendiğin şarkılar **favorilere**, listelerin ve albümlerin **albüm** olarak eklenir. Kitaplığında zaten olan şarkılar atlanır, yani aktarmayı istediğin kadar tekrarlayabilirsin. İlerleme altta görünür; aktarırken uygulamayı kullanmaya devam edebilirsin.
+
+### YouTube Music
+
+1. **YouTube Music** satırındaki **Giriş yap ve aktar**'a bas.
+2. Açılan pencerede Google hesabınla giriş yap.
+3. Giriş bitince aktarma kendiliğinden başlar: beğendiğin şarkılar, kayıtlı albümlerin ve listelerin gelir.
+
+### Spotify (Premium gerekmez)
+
+**Spotify bağlantı ya da dosya** satırındaki **Aktar**'a bas. İki yol var, ikisini birlikte de kullanabilirsin:
+
+**a) Liste bağlantısı (hızlı):**
+1. Spotify'da listeyi aç, **⋯ → Paylaş → Bağlantıyı kopyala**.
+2. Bağlantıyı kutuya yapıştır. Birden çok listeyi alt alta yapıştırabilirsin.
+3. **Aktar**'a bas.
+
+Bu yolla liste başına **en fazla 100 şarkı** gelir ve **Beğenilen Şarkılar** alınamaz. Hepsi için aşağıdaki dosya yolunu kullan.
+
+**b) Hesap verisi dosyası (beğenilenler dahil her şey):**
+1. [spotify.com → Hesap → Gizlilik](https://www.spotify.com/account/privacy/) sayfasında **Hesap verileri**'ni iste.
+2. Spotify birkaç gün içinde e-postayla bir indirme bağlantısı gönderir. **my_spotify_data.zip** dosyasını indir (açmana gerek yok).
+3. SOUND'da **Dosya seç** ile bu zip'i seç ve **Aktar**'a bas.
+
+[Exportify](https://exportify.app)'dan indirdiğin **CSV** dosyaları da aynı şekilde seçilebilir; beklemeden tek tek liste almak için iyi bir yol.
+
+Spotify şarkıları YouTube Music'te aranıp eşleştirilir. Çok nadir de olsa bir şarkı bulunamayabilir ya da farklı bir sürümü gelebilir.
+
+### Spotify hesabıyla giriş (yalnızca Premium)
+
+Spotify, hesaba bağlanan uygulamalardan bir **Client ID** istiyor ve bunu artık yalnızca Premium hesaplara veriyor. Premium'un varsa:
+
+1. **Spotify hesabı (Premium)** satırındaki **Giriş yap ve aktar**'a bas; ilk seferde kurulum penceresi açılır.
+2. [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard)'a gir, **Create app**'e bas. Ad/açıklamaya istediğini yaz (ör. SOUND).
+3. **Redirect URI** olarak `http://127.0.0.1:43117/callback` ekle, **Web API**'yi işaretle, kaydet.
+4. Uygulamanın sayfasındaki **Client ID**'yi SOUND'daki kutuya yapıştır, **Giriş yap ve aktar**'a bas.
+5. Tarayıcıda izin ver; beğendiğin şarkılar ve listelerin doğrudan aktarılır. Bu kurulum bir kez yapılır.
+
+Premium değilsen "Web API" kutusu seçilemez; o durumda yukarıdaki bağlantı ya da dosya yolunu kullan.
+
 ## Geliştirme
 
 ```

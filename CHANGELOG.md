@@ -4,6 +4,11 @@ Her güncellemede yenilikler en üste eklenir; eskiler aşağıda durur. Bilgisa
 
 ---
 
+## 27 Kasım 2026 · masaüstü
+
+### Yeni
+- **Aktarma rehberi:** README'ye YouTube Music ve Spotify'dan şarkılarını nasıl aktaracağının adım adım anlatımı eklendi: YouTube Music girişi, Spotify liste bağlantısı, hesap verisi dosyası (beğenilen şarkılar dahil) ve Premium hesapla giriş.
+
 ## 26 Kasım 2026 · Android 0.1.14 + Galaxy Watch 1.1 + masaüstü
 
 ### Yeni
